@@ -1,6 +1,18 @@
 import type { CodeNode, CodeTrailDocument, CodeTrailEdge, Scope } from './types';
 import { touchDocument } from './document';
 
+function isSelectionAnchor(anchor: CodeNode['callAnchors'][number]): boolean {
+  return anchor.id.startsWith('selection_anchor_') && Boolean(anchor.selectedText);
+}
+
+function selectionAnchorStillExists(node: CodeNode, anchor: CodeNode['callAnchors'][number]): boolean {
+  if (!isSelectionAnchor(anchor) || !anchor.selectedText) {
+    return true;
+  }
+
+  return node.codeSnapshot.includes(anchor.selectedText);
+}
+
 export function upsertNode(document: CodeTrailDocument, node: CodeNode): CodeTrailDocument {
   const exists = document.nodes.some((item) => item.id === node.id);
   return touchDocument({
@@ -56,5 +68,37 @@ export function assignNodeScope(
   return touchDocument({
     ...document,
     nodes: document.nodes.map((node) => (node.id === nodeId ? { ...node, scopeId } : node))
+  });
+}
+
+export function pruneMissingSelectionAnchors(document: CodeTrailDocument, nodeId: string): CodeTrailDocument {
+  const sourceNode = document.nodes.find((node) => node.id === nodeId);
+  if (!sourceNode) {
+    return document;
+  }
+
+  const staleAnchorIds = new Set(
+    sourceNode.callAnchors
+      .filter((anchor) => !selectionAnchorStillExists(sourceNode, anchor))
+      .map((anchor) => anchor.id)
+  );
+
+  if (staleAnchorIds.size === 0) {
+    return document;
+  }
+
+  return touchDocument({
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === sourceNode.id
+        ? {
+            ...node,
+            callAnchors: node.callAnchors.filter((anchor) => !staleAnchorIds.has(anchor.id))
+          }
+        : node
+    ),
+    edges: document.edges.filter(
+      (edge) => edge.sourceNodeId !== sourceNode.id || !staleAnchorIds.has(edge.sourceAnchorId)
+    )
   });
 }

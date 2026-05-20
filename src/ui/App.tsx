@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -9,25 +9,30 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
-  useNodesState
+  useNodesState,
+  useReactFlow
 } from '@xyflow/react';
 import { Download, FileDown, FilePlus2, FolderOpen, Save, SquareCode } from 'lucide-react';
 import {
+  createCallAnchor,
   createCodeNode,
   createEdge,
   createEmptyDocument,
   createScope,
+  newId,
   parseDocument,
   serializeDocument,
   validateDocument
 } from '../model/document';
-import type { CodeTrailDocument } from '../model/types';
+import type { CallAnchor, CodeTrailDocument } from '../model/types';
+import { pruneMissingSelectionAnchors } from '../model/operations';
 import { generateStaticHtml } from '../export/htmlExport';
 import { openProjectNative, overwriteTextNative, saveTextNative } from '../platform/files';
 import { CodeNodeView } from './CodeNodeView';
 import { ScopeNodeView } from './ScopeNodeView';
 import { CallEdgeView } from './CallEdgeView';
 import { toFlowEdges, toFlowNodes, updateGeometryFromFlowNodes } from './flowMapping';
+import type { SelectedCodeAnchor } from './flowMapping';
 
 const nodeTypes = {
   code: CodeNodeView,
@@ -97,6 +102,22 @@ function numericDimension(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function isEventInsideFocusedNode(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('.code-node.is-focused'));
+}
+
+function scrollFocusedCodePanel(deltaX: number, deltaY: number): void {
+  const panel = window.document.querySelector('.code-node.is-focused .code-node__code-panel');
+  if (panel instanceof HTMLElement) {
+    panel.scrollBy({ left: deltaX, top: deltaY, behavior: 'auto' });
+  }
+}
+
+function hasUsableFlowViewport(): boolean {
+  const bounds = window.document.querySelector('.react-flow')?.getBoundingClientRect();
+  return Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+}
+
 function recomputeScopeBounds(document: CodeTrailDocument, scopeId: string): CodeTrailDocument {
   const assignedRects = document.nodes
     .filter((node) => node.scopeId === scopeId)
@@ -118,6 +139,17 @@ function recomputeScopeBounds(document: CodeTrailDocument, scopeId: string): Cod
       scope.id === scopeId ? { ...scope, bounds: nextBounds } : scope
     )
   };
+}
+
+function createAnchorFromSelection(selection: SelectedCodeAnchor): CallAnchor {
+  return createCallAnchor({
+    id: newId('selection_anchor'),
+    label: selection.label,
+    line: selection.line,
+    startColumn: selection.startColumn,
+    endColumn: selection.endColumn,
+    selectedText: selection.selectedText
+  });
 }
 
 function settleNodeScopeByFinalPosition(
@@ -166,6 +198,7 @@ function settleNodeScopeByFinalPosition(
 }
 
 function CodeTrailEditor() {
+  const { setViewport } = useReactFlow();
   const [document, setDocumentState] = useState<CodeTrailDocument>(() => {
     const doc = createEmptyDocument('CodeTrail Study Map');
     const scope = createScope({
@@ -202,9 +235,11 @@ function CodeTrailEditor() {
     };
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [status, setStatus] = useState('Ready');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const scopeDragRef = useRef<ScopeDragState | null>(null);
 
   const setDocument = useCallback((next: CodeTrailDocument) => {
@@ -274,38 +309,191 @@ function CodeTrailEditor() {
 
   const updateCodeNode = useCallback(
     (updatedNode: CodeTrailDocument['nodes'][number]) => {
-      setDocument({
+      const nextDocument = {
         ...document,
         nodes: document.nodes.map((node) => (node.id === updatedNode.id ? updatedNode : node))
-      });
+      };
+      setDocument(pruneMissingSelectionAnchors(nextDocument, updatedNode.id));
     },
     [document, setDocument]
   );
 
   const createNodeFromSelection = useCallback(
-    (sourceNode: CodeTrailDocument['nodes'][number], selectedCode: string) => {
+    (sourceNode: CodeTrailDocument['nodes'][number], selection: SelectedCodeAnchor) => {
+      const currentSourceNode = document.nodes.find((node) => node.id === sourceNode.id);
+      if (!currentSourceNode || !selection.selectedText) {
+        return;
+      }
+
+      const anchor = createAnchorFromSelection(selection);
       const node = createCodeNode({
         title: 'Selected code',
         language: sourceNode.language,
         summary: 'Created from a selected code block.',
-        codeSnapshot: selectedCode,
+        codeSnapshot: selection.selectedText,
         position: {
-          x: sourceNode.position.x + sourceNode.size.width + 80,
-          y: sourceNode.position.y + 40
+          x: currentSourceNode.position.x + currentSourceNode.size.width + 80,
+          y: currentSourceNode.position.y + 40
         },
-        scopeId: sourceNode.scopeId
+        scopeId: currentSourceNode.scopeId
       });
       let nextDocument: CodeTrailDocument = {
         ...document,
-        nodes: [...document.nodes, node]
+        nodes: [
+          ...document.nodes.map((item) =>
+            item.id === currentSourceNode.id
+              ? { ...item, callAnchors: [...item.callAnchors, anchor] }
+              : item
+          ),
+          node
+        ],
+        edges: [
+          ...document.edges,
+          createEdge({
+            sourceNodeId: currentSourceNode.id,
+            sourceAnchorId: anchor.id,
+            targetNodeId: node.id,
+            label: anchor.label
+          })
+        ]
       };
-      if (sourceNode.scopeId) {
-        nextDocument = recomputeScopeBounds(nextDocument, sourceNode.scopeId);
+      if (currentSourceNode.scopeId) {
+        nextDocument = recomputeScopeBounds(nextDocument, currentSourceNode.scopeId);
       }
       setDocument(nextDocument);
       setSelectedId(node.id);
+      setStatus('Created a linked node from the selected code.');
     },
     [document, setDocument]
+  );
+
+  const createSelectionAnchor = useCallback(
+    (sourceNode: CodeTrailDocument['nodes'][number], selection: SelectedCodeAnchor) => {
+      const currentSourceNode = document.nodes.find((node) => node.id === sourceNode.id);
+      if (!currentSourceNode || !selection.selectedText) {
+        return;
+      }
+
+      const anchor = createAnchorFromSelection(selection);
+      setDocument({
+        ...document,
+        nodes: document.nodes.map((item) =>
+          item.id === currentSourceNode.id
+            ? { ...item, callAnchors: [...item.callAnchors, anchor] }
+            : item
+        )
+      });
+      setSelectedId(currentSourceNode.id);
+      setStatus('Drag the new anchor endpoint to a target node.');
+    },
+    [document, setDocument]
+  );
+
+  const removeCallAnchor = useCallback(
+    (sourceNodeId: string, anchorId: string) => {
+      setDocument({
+        ...document,
+        nodes: document.nodes.map((node) =>
+          node.id === sourceNodeId
+            ? { ...node, callAnchors: node.callAnchors.filter((anchor) => anchor.id !== anchorId) }
+            : node
+        ),
+        edges: document.edges.filter(
+          (edge) => edge.sourceNodeId !== sourceNodeId || edge.sourceAnchorId !== anchorId
+        )
+      });
+      setStatus('Connection anchor removed.');
+    },
+    [document, setDocument]
+  );
+
+  const connectSelectionToNode = useCallback(
+    (sourceNode: CodeTrailDocument['nodes'][number], selection: SelectedCodeAnchor, targetNodeId: string) => {
+      const currentSourceNode = document.nodes.find((node) => node.id === sourceNode.id);
+      const targetNode = document.nodes.find((node) => node.id === targetNodeId);
+      if (!currentSourceNode || !targetNode || targetNode.id === currentSourceNode.id || !selection.selectedText) {
+        return;
+      }
+
+      const anchor = createAnchorFromSelection(selection);
+      setDocument({
+        ...document,
+        nodes: document.nodes.map((item) =>
+          item.id === currentSourceNode.id
+            ? { ...item, callAnchors: [...item.callAnchors, anchor] }
+            : item
+        ),
+        edges: [
+          ...document.edges,
+          createEdge({
+            sourceNodeId: currentSourceNode.id,
+            sourceAnchorId: anchor.id,
+            targetNodeId,
+            label: anchor.label
+          })
+        ]
+      });
+      setSelectedId(targetNodeId);
+      setStatus(`Connected selected code to ${targetNode.title}.`);
+    },
+    [document, setDocument]
+  );
+
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      const edge = document.edges.find((item) => item.id === edgeId);
+      if (!edge) {
+        return;
+      }
+
+      const nextEdges = document.edges.filter((item) => item.id !== edgeId);
+      const hasOtherEdgeForAnchor = nextEdges.some(
+        (item) => item.sourceNodeId === edge.sourceNodeId && item.sourceAnchorId === edge.sourceAnchorId
+      );
+      setDocument({
+        ...document,
+        nodes: document.nodes.map((node) =>
+          node.id === edge.sourceNodeId && !hasOtherEdgeForAnchor
+            ? { ...node, callAnchors: node.callAnchors.filter((anchor) => anchor.id !== edge.sourceAnchorId) }
+            : node
+        ),
+        edges: nextEdges
+      });
+      setSelectedId(null);
+      setStatus('Connection removed.');
+    },
+    [document, setDocument]
+  );
+
+  const focusCodeNode = useCallback(
+    (id: string, width?: number, height?: number) => {
+      const node = document.nodes.find((item) => item.id === id);
+      if (!node) {
+        return;
+      }
+
+      const nodeWidth = width ?? node.size.width;
+      const nodeHeight = height ?? node.size.height;
+      setFocusedId(id);
+      setSelectedId(id);
+
+      if (hasUsableFlowViewport()) {
+        const bounds = window.document.querySelector('.react-flow')?.getBoundingClientRect();
+        const zoom = nodeHeight > (bounds?.height ?? 0) * 0.82 ? 1.05 : 1.35;
+        const topMargin = 32;
+        setViewport(
+          {
+            x: ((bounds?.width ?? 0) - nodeWidth * zoom) / 2 - node.position.x * zoom,
+            y: topMargin - node.position.y * zoom,
+            zoom
+          },
+          { duration: 420 }
+        );
+      }
+
+      setStatus('Focused node. Mouse actions now target this node; click canvas or press Escape to restore canvas controls.');
+    },
+    [document.nodes, setViewport]
   );
 
   const mappedFlowNodes = useMemo(
@@ -315,13 +503,19 @@ function CodeTrailEditor() {
         onToggleNode,
         onResizeNode,
         updateCodeNode,
+        createSelectionAnchor,
+        removeCallAnchor,
         createNodeFromSelection,
+        connectSelectionToNode,
+        deleteEdge,
         setSelectedId,
-        selectedId
+        focusCodeNode,
+        selectedId,
+        focusedId
       ),
-    [createNodeFromSelection, document, onResizeNode, onToggleNode, selectedId, updateCodeNode]
+    [connectSelectionToNode, createNodeFromSelection, createSelectionAnchor, deleteEdge, document, focusCodeNode, focusedId, onResizeNode, onToggleNode, removeCallAnchor, selectedId, updateCodeNode]
   );
-  const mappedFlowEdges = useMemo(() => toFlowEdges(document), [document]);
+  const mappedFlowEdges = useMemo(() => toFlowEdges(document, deleteEdge), [deleteEdge, document]);
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(mappedFlowNodes);
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(mappedFlowEdges);
 
@@ -333,8 +527,28 @@ function CodeTrailEditor() {
     setFlowEdges(mappedFlowEdges);
   }, [mappedFlowEdges, setFlowEdges]);
 
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !focusedId) {
+      return;
+    }
+
+    const stopCanvasWheel = (event: WheelEvent) => {
+      scrollFocusedCodePanel(event.deltaX, event.deltaY);
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    canvas.addEventListener('wheel', stopCanvasWheel, { capture: true, passive: false });
+    return () => canvas.removeEventListener('wheel', stopCanvasWheel, { capture: true });
+  }, [focusedId]);
+
   const onConnect = useCallback<OnConnect>(
     (connection) => {
+      if (focusedId) {
+        return;
+      }
       if (!connection.source || !connection.sourceHandle || !connection.target) {
         return;
       }
@@ -353,12 +567,25 @@ function CodeTrailEditor() {
       });
       setDocument({ ...document, edges: [...document.edges, edge] });
     },
-    [document, setDocument]
+    [document, focusedId, setDocument]
   );
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     setSelectedId(params.nodes[0]?.id ?? params.edges[0]?.id ?? null);
   }, []);
+
+  const focusNode = useCallback(
+    (node: Node) => {
+      if (document.scopes.some((scope) => scope.id === node.id)) {
+        return;
+      }
+
+      const width = numericDimension(node.style?.width, 360);
+      const height = numericDimension(node.style?.height, 260);
+      focusCodeNode(node.id, width, height);
+    },
+    [document.scopes, focusCodeNode]
+  );
 
   const deleteSelected = useCallback(() => {
     if (!selectedId) {
@@ -415,13 +642,18 @@ function CodeTrailEditor() {
         return;
       }
       if (event.key === 'Escape') {
+        if (focusedId) {
+          setFocusedId(null);
+          setStatus('Canvas zoom restored.');
+          return;
+        }
         deleteSelected();
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deleteSelected]);
+  }, [deleteSelected, focusedId]);
 
   const beginScopeDrag = useCallback(
     (node: Node) => {
@@ -617,7 +849,26 @@ function CodeTrailEditor() {
         </nav>
       </header>
       <section className="workspace">
-        <div className="canvas">
+        <div
+          ref={canvasRef}
+          className="canvas"
+          onDoubleClickCapture={(event) => {
+            if (!focusedId || isEventInsideFocusedNode(event.target)) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClickCapture={(event) => {
+            if (!focusedId || isEventInsideFocusedNode(event.target)) {
+              return;
+            }
+
+            setFocusedId(null);
+            setStatus('Canvas zoom restored.');
+          }}
+        >
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -642,10 +893,32 @@ function CodeTrailEditor() {
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
             onNodeClick={(_, node) => setSelectedId(node.id)}
+            onNodeDoubleClick={(_, node) => focusNode(node)}
             onEdgeClick={(_, edge) => setSelectedId(edge.id)}
-            edgesFocusable
-            nodesFocusable
+            onPaneClick={() => {
+              if (focusedId) {
+                setFocusedId(null);
+                setStatus('Canvas zoom restored.');
+              }
+            }}
+            edgesFocusable={!focusedId}
+            nodesFocusable={!focusedId}
+            elementsSelectable={!focusedId}
             fitView
+            zoomOnScroll={!focusedId}
+            panOnScroll={!focusedId}
+            zoomOnPinch={!focusedId}
+            zoomOnDoubleClick={!focusedId}
+            panOnDrag={!focusedId}
+            panActivationKeyCode={focusedId ? null : 'Space'}
+            zoomActivationKeyCode={focusedId ? null : undefined}
+            nodesDraggable={!focusedId}
+            nodesConnectable={!focusedId}
+            connectOnClick={!focusedId}
+            autoPanOnConnect={!focusedId}
+            autoPanOnNodeDrag={!focusedId}
+            noWheelClassName="nowheel"
+            noPanClassName="nopan"
             minZoom={0.25}
             maxZoom={2}
             proOptions={{ hideAttribution: true }}

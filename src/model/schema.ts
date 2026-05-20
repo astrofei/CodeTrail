@@ -15,7 +15,8 @@ const callAnchorSchema = z.object({
   label: z.string().min(1),
   line: z.number().int().positive(),
   startColumn: z.number().int().nonnegative(),
-  endColumn: z.number().int().nonnegative()
+  endColumn: z.number().int().nonnegative(),
+  selectedText: z.string().optional()
 });
 
 const codeNodeSchema = z.object({

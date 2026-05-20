@@ -1,4 +1,5 @@
 import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from '@xyflow/react';
+import { X } from 'lucide-react';
 
 type Point = {
   x: number;
@@ -37,6 +38,7 @@ function buildReadablePath(
 }
 
 export function CallEdgeView({
+  data,
   id,
   label,
   markerEnd,
@@ -47,6 +49,7 @@ export function CallEdgeView({
   targetX,
   targetY
 }: EdgeProps) {
+  const edgeData = data as { onDeleteEdge?: (edgeId: string) => void } | undefined;
   const { labelClassName, labelX, labelY, path } = buildReadablePath(
     { x: sourceX, y: sourceY },
     { x: targetX, y: targetY }
@@ -63,8 +66,8 @@ export function CallEdgeView({
           strokeWidth: selected ? 4 : 2.5
         }}
       />
-      {label && (
-        <EdgeLabelRenderer>
+      <EdgeLabelRenderer>
+        {label && (
           <div
             className={labelClassName}
             style={{
@@ -73,8 +76,24 @@ export function CallEdgeView({
           >
             {label}
           </div>
-        </EdgeLabelRenderer>
-      )}
+        )}
+        {edgeData?.onDeleteEdge && (
+          <button
+            type="button"
+            className="edge-end-delete nodrag nopan"
+            title="Remove connection"
+            style={{
+              transform: `translate(-50%, -50%) translate(${targetX - 14}px, ${targetY}px)`
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              edgeData.onDeleteEdge?.(id);
+            }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </EdgeLabelRenderer>
     </>
   );
 }

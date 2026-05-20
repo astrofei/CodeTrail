@@ -9,7 +9,7 @@ import {
   serializeDocument,
   validateDocument
 } from './document';
-import { toggleNodeCollapsed } from './operations';
+import { pruneMissingSelectionAnchors, toggleNodeCollapsed } from './operations';
 
 describe('CodeTrail document model', () => {
   it('validates a node, scope, and call-anchor edge', () => {
@@ -63,5 +63,40 @@ describe('CodeTrail document model', () => {
     const parsed = parseDocument(serializeDocument(collapsed));
 
     expect(parsed.nodes[0].collapsed).toBe(true);
+  });
+
+  it('removes generated selection edges when the source text disappears but keeps target nodes', () => {
+    const nodeA = createCodeNode({
+      id: 'node_a',
+      codeSnapshot: 'function entry() {\n  B.work();\n}',
+      callAnchors: [
+        createCallAnchor({
+          id: 'selection_anchor_a',
+          label: 'B.work();',
+          line: 2,
+          startColumn: 2,
+          endColumn: 11,
+          selectedText: 'B.work();'
+        })
+      ]
+    });
+    const nodeB = createCodeNode({ id: 'node_b' });
+    const document = {
+      ...createEmptyDocument(),
+      nodes: [{ ...nodeA, codeSnapshot: 'function entry() {\n  return true;\n}' }, nodeB],
+      edges: [
+        createEdge({
+          sourceNodeId: nodeA.id,
+          sourceAnchorId: 'selection_anchor_a',
+          targetNodeId: nodeB.id
+        })
+      ]
+    };
+
+    const pruned = pruneMissingSelectionAnchors(document, nodeA.id);
+
+    expect(pruned.nodes.map((node) => node.id)).toEqual(['node_a', 'node_b']);
+    expect(pruned.nodes[0].callAnchors).toEqual([]);
+    expect(pruned.edges).toEqual([]);
   });
 });

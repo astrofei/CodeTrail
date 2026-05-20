@@ -16,6 +16,7 @@ export type CallAnchor = {
   line: number;
   startColumn: number;
   endColumn: number;
+  selectedText?: string;
 };
 
 export type CodeNode = {

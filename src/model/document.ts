@@ -69,7 +69,8 @@ export function createCallAnchor(partial: Partial<CallAnchor> = {}): CallAnchor 
     label: partial.label ?? 'call()',
     line: partial.line ?? 1,
     startColumn: partial.startColumn ?? 0,
-    endColumn: partial.endColumn ?? 0
+    endColumn: partial.endColumn ?? 0,
+    selectedText: partial.selectedText
   };
 }
 
