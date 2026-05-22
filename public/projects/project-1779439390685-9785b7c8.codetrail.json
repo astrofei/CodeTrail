@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "metadata": {
+    "title": "CodeTrail Study Map",
+    "description": "",
+    "createdAt": "2026-05-22T08:36:28.082Z",
+    "updatedAt": "2026-05-22T08:43:10.685Z"
+  },
+  "nodes": [
+    {
+      "id": "node_5a7853f5",
+      "title": "A.entry",
+      "language": "typescript",
+      "summary": "Entry point being reviewed.",
+      "codeSnapshot": "function entry() {\n  B.work();\n}",
+      "position": {
+        "x": 140,
+        "y": 160
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": [
+        {
+          "id": "anchor_example",
+          "label": "B.work()",
+          "line": 2,
+          "startColumn": 2,
+          "endColumn": 10
+        }
+      ]
+    },
+    {
+      "id": "node_b64dcfa6",
+      "title": "B.work",
+      "language": "typescript",
+      "summary": "Called method.",
+      "codeSnapshot": "function work() {\n  return true;\n}",
+      "position": {
+        "x": 560,
+        "y": 190
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": []
+    },
+    {
+      "id": "node_34a59969",
+      "title": "New function 3",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 188.38812785388126,
+        "y": 605.1050228310503
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_1f904dbb",
+      "callAnchors": []
+    },
+    {
+      "id": "node_3d08a213",
+      "title": "New function 4",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 46.625570776255756,
+        "y": 122.70776255707761
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": []
+    },
+    {
+      "id": "node_df714283",
+      "title": "New function 5",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 418.0182648401826,
+        "y": 710.8662861863229
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_ad60d166",
+      "callAnchors": []
+    },
+    {
+      "id": "node_fc796658",
+      "title": "New function 6",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 212,
+        "y": 1176
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_8f42df18",
+      "callAnchors": []
+    },
+    {
+      "id": "node_cc599196",
+      "title": "New function 7",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 178.1826484018265,
+        "y": 1529.13698630137
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_b946e943",
+      "callAnchors": []
+    },
+    {
+      "id": "node_7325dfc1",
+      "title": "New function 8",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 197.90410958904107,
+        "y": 1862.703196347032
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_e08b9c77",
+      "callAnchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_5ccb66ba",
+      "sourceNodeId": "node_5a7853f5",
+      "sourceAnchorId": "anchor_example",
+      "targetNodeId": "node_b64dcfa6",
+      "label": "calls",
+      "color": "#2563eb"
+    }
+  ],
+  "scopes": [
+    {
+      "id": "scope_c97041be",
+      "title": "Reading scope",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 22.625570776255756,
+        "y": 54.707762557077615,
+        "width": 921.3744292237443,
+        "height": 439.2922374429224
+      }
+    },
+    {
+      "id": "scope_1f904dbb",
+      "title": "Scope 2",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 164.38812785388126,
+        "y": 537.1050228310503,
+        "width": 408.00000000000006,
+        "height": 372
+      }
+    },
+    {
+      "id": "scope_ad60d166",
+      "title": "Scope 3",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 394.0182648401826,
+        "y": 642.8662861863229,
+        "width": 408,
+        "height": 372
+      }
+    },
+    {
+      "id": "scope_8f42df18",
+      "title": "Scope 4",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 188,
+        "y": 1108,
+        "width": 408,
+        "height": 372
+      }
+    },
+    {
+      "id": "scope_b946e943",
+      "title": "Scope 5",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 154.1826484018265,
+        "y": 1461.13698630137,
+        "width": 408.00000000000006,
+        "height": 372
+      }
+    },
+    {
+      "id": "scope_e08b9c77",
+      "title": "Scope 6",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 173.90410958904107,
+        "y": 1794.703196347032,
+        "width": 408.00000000000006,
+        "height": 371.9999999999998
+      }
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  }
+}

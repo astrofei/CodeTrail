@@ -3,12 +3,12 @@
   "metadata": {
     "title": "CodeTrail Study Map",
     "description": "",
-    "createdAt": "2026-05-22T07:57:20.529Z",
-    "updatedAt": "2026-05-22T08:16:20.659Z"
+    "createdAt": "2026-05-22T08:29:22.924Z",
+    "updatedAt": "2026-05-22T08:29:28.918Z"
   },
   "nodes": [
     {
-      "id": "node_8ae496c0",
+      "id": "node_f77528ac",
       "title": "A.entry",
       "language": "typescript",
       "summary": "Entry point being reviewed.",
@@ -23,7 +23,7 @@
       },
       "collapsed": false,
       "color": "#e0f2fe",
-      "scopeId": "scope_38ca21da",
+      "scopeId": "scope_f46f465a",
       "callAnchors": [
         {
           "id": "anchor_example",
@@ -35,7 +35,7 @@
       ]
     },
     {
-      "id": "node_0e95a459",
+      "id": "node_590027b3",
       "title": "B.work",
       "language": "typescript",
       "summary": "Called method.",
@@ -50,23 +50,23 @@
       },
       "collapsed": false,
       "color": "#e0f2fe",
-      "scopeId": "scope_38ca21da",
+      "scopeId": "scope_f46f465a",
       "callAnchors": []
     }
   ],
   "edges": [
     {
-      "id": "edge_ce660b4f",
-      "sourceNodeId": "node_8ae496c0",
+      "id": "edge_b03a90be",
+      "sourceNodeId": "node_f77528ac",
       "sourceAnchorId": "anchor_example",
-      "targetNodeId": "node_0e95a459",
+      "targetNodeId": "node_590027b3",
       "label": "calls",
       "color": "#2563eb"
     }
   ],
   "scopes": [
     {
-      "id": "scope_38ca21da",
+      "id": "scope_f46f465a",
       "title": "Reading scope",
       "color": "#dcfce7",
       "bounds": {

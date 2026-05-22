@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "metadata": {
+    "title": "CodeTrail Study Map",
+    "description": "",
+    "createdAt": "2026-05-22T08:36:28.082Z",
+    "updatedAt": "2026-05-22T08:42:02.996Z"
+  },
+  "nodes": [
+    {
+      "id": "node_5a7853f5",
+      "title": "A.entry",
+      "language": "typescript",
+      "summary": "Entry point being reviewed.",
+      "codeSnapshot": "function entry() {\n  B.work();\n}",
+      "position": {
+        "x": 140,
+        "y": 160
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": [
+        {
+          "id": "anchor_example",
+          "label": "B.work()",
+          "line": 2,
+          "startColumn": 2,
+          "endColumn": 10
+        }
+      ]
+    },
+    {
+      "id": "node_b64dcfa6",
+      "title": "B.work",
+      "language": "typescript",
+      "summary": "Called method.",
+      "codeSnapshot": "function work() {\n  return true;\n}",
+      "position": {
+        "x": 560,
+        "y": 190
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": []
+    },
+    {
+      "id": "node_34a59969",
+      "title": "New function 3",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 195.45662100456622,
+        "y": 510.0730593607306
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": null,
+      "callAnchors": []
+    },
+    {
+      "id": "node_3d08a213",
+      "title": "New function 4",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 46.625570776255756,
+        "y": 122.70776255707761
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_c97041be",
+      "callAnchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_5ccb66ba",
+      "sourceNodeId": "node_5a7853f5",
+      "sourceAnchorId": "anchor_example",
+      "targetNodeId": "node_b64dcfa6",
+      "label": "calls",
+      "color": "#2563eb"
+    }
+  ],
+  "scopes": [
+    {
+      "id": "scope_c97041be",
+      "title": "Reading scope",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 22.625570776255756,
+        "y": 54.707762557077615,
+        "width": 921.3744292237443,
+        "height": 439.2922374429224
+      }
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  }
+}
