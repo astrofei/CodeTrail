@@ -4,7 +4,7 @@
     "title": "CodeTrail Study Map",
     "description": "",
     "createdAt": "2026-05-22T08:20:22.435Z",
-    "updatedAt": "2026-05-22T08:20:27.918Z"
+    "updatedAt": "2026-05-22T08:26:52.571Z"
   },
   "nodes": [
     {
@@ -14,8 +14,8 @@
       "summary": "Entry point being reviewed.",
       "codeSnapshot": "function entry() {\n  B.work();\n}",
       "position": {
-        "x": 140,
-        "y": 160
+        "x": 208.32876712328766,
+        "y": -262.04794520547944
       },
       "size": {
         "width": 360,
@@ -23,7 +23,7 @@
       },
       "collapsed": false,
       "color": "#e0f2fe",
-      "scopeId": "scope_48ef41e3",
+      "scopeId": null,
       "callAnchors": [
         {
           "id": "anchor_example",
@@ -70,10 +70,10 @@
       "title": "Reading scope",
       "color": "#dcfce7",
       "bounds": {
-        "x": 60,
-        "y": 70,
-        "width": 820,
-        "height": 430
+        "x": 536,
+        "y": 122,
+        "width": 408,
+        "height": 372
       }
     }
   ],
