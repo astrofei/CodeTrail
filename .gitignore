@@ -5,3 +5,5 @@ src-tauri/gen/schemas/
 
 *.log
 *.tmp
+.env.local
+.env.*.local

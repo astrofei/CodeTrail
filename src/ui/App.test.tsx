@@ -393,6 +393,58 @@ describe('CodeTrail editor', () => {
     }
   });
 
+  it('loads an embedded project directly when it is missing from the manifest', async () => {
+    const directDocument = {
+      version: 1,
+      metadata: {
+        title: 'Direct embed study',
+        description: '',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [
+        {
+          id: 'node_direct',
+          title: 'Direct.entry',
+          language: 'typescript',
+          summary: 'Loaded directly from project query.',
+          codeSnapshot: 'function direct() {\n  return true;\n}',
+          position: { x: 120, y: 120 },
+          size: { width: 360, height: 280 },
+          collapsed: false,
+          color: '#e0f2fe',
+          scopeId: null,
+          callAnchors: []
+        }
+      ],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      }
+      if (url.endsWith('/projects/project-1779421516724-f3c27fcf.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(directDocument), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    window.history.pushState({}, '', '/?embed=1&project=project-1779421516724-f3c27fcf.codetrail.json');
+
+    try {
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByText('Direct.entry')).toBeInTheDocument());
+      expect(screen.queryByText('Project not found for project-1779421516724-f3c27fcf.codetrail.json.')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Hosted project library')).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('auto-saves embed edits into the local project library', async () => {
     const hostedDocument = {
       version: 1,
@@ -464,6 +516,109 @@ describe('CodeTrail editor', () => {
       expect(projects[0].path).toBe('hosted-study.codetrail.json');
       expect(projects[0].document.nodes[0].collapsed).toBe(true);
       expect(screen.getByText('Auto-saved Hosted study.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('auto-saves current document edits to GitHub even before a project is manually saved', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    try {
+      render(<App />);
+
+      const node = screen.getByText('A.entry').closest('.code-node')!;
+      fireEvent.click(node);
+      fireEvent.click(within(node as HTMLElement).getByTitle('Collapse node'));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100);
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const putUrls = fetchMock.mock.calls
+        .filter(([, init]) => init?.method === 'PUT')
+        .map(([input]) => String(input));
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+      expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('creates a GitHub project automatically when a token is configured and no project is active', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    try {
+      render(<App />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const putUrls = fetchMock.mock.calls
+        .filter(([, init]) => init?.method === 'PUT')
+        .map(([input]) => String(input));
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+      expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();
