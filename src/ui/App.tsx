@@ -309,6 +309,10 @@ function githubProjectPath(config: GitHubSyncConfig, projectPath: string): strin
   return `${config.folder.replace(/\/+$/, '')}/${fileNameFromProjectPath(projectPath)}`;
 }
 
+function githubTrashProjectPath(config: GitHubSyncConfig, projectPath: string): string {
+  return `${config.folder.replace(/\/+$/, '')}/trash/${Date.now()}-${fileNameFromProjectPath(projectPath)}`;
+}
+
 function encodeBase64Utf8(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = '';
@@ -1602,7 +1606,15 @@ function CodeTrailEditor() {
 
     try {
       const projectPath = githubProjectPath(githubConfig, entry.path);
+      const trashPath = githubTrashProjectPath(githubConfig, entry.path);
       const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
+      const projectDocument = entry.path === activeHostedProjectPath ? document : await getProjectDocument(entry);
+      await uploadGitHubContent(
+        githubConfig,
+        trashPath,
+        serializeDocument(projectDocument),
+        `Move CodeTrail project ${entry.title} to trash`
+      );
       await deleteGitHubContent(githubConfig, projectPath, `Delete CodeTrail project ${entry.title}`);
       await uploadGitHubContent(
         githubConfig,
@@ -1610,8 +1622,8 @@ function CodeTrailEditor() {
         hostedProjectManifestContent(nextProjects),
         'Update CodeTrail project manifest'
       );
-      setGithubSyncStatus(`Deleted ${entry.title} from GitHub.`);
-      setStatus(`Deleted ${entry.title} from GitHub.`);
+      setGithubSyncStatus(`Moved ${entry.title} to GitHub trash.`);
+      setStatus(`Moved ${entry.title} to GitHub trash.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setGithubSyncStatus(message);

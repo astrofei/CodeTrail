@@ -236,6 +236,101 @@ describe('CodeTrail editor', () => {
     }
   });
 
+  it('moves a GitHub-backed project file to trash before deleting it from the project folder', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1779440000000);
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'Hosted study',
+        description: 'A hosted fixture.',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/trash/') && init?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'trash-sha' } }), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/hosted-study.codetrail.json') && init?.method === 'DELETE') {
+        return Promise.resolve(new Response(JSON.stringify({ content: null }), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/manifest.json') && init?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'manifest-sha-next' } }), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/trash/')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      if (url.includes('/contents/public/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ sha: 'project-sha' }), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/manifest.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ sha: 'manifest-sha' }), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      await screen.findByText('Hosted study');
+      fireEvent.click(screen.getByLabelText('Delete Hosted study'));
+
+      await waitFor(() => expect(screen.getAllByText('Moved Hosted study to GitHub trash.').length).toBeGreaterThan(0));
+
+      const calls = fetchMock.mock.calls.map(([input, init]) => ({ url: String(input), method: init?.method }));
+      const trashPutIndex = calls.findIndex(
+        (call) => call.method === 'PUT' && call.url.includes('/contents/public/projects/trash/1779440000000-hosted-study.codetrail.json')
+      );
+      const deleteIndex = calls.findIndex(
+        (call) => call.method === 'DELETE' && call.url.includes('/contents/public/projects/hosted-study.codetrail.json')
+      );
+      const manifestPutIndex = calls.findIndex(
+        (call) => call.method === 'PUT' && call.url.includes('/contents/public/projects/manifest.json')
+      );
+      expect(trashPutIndex).toBeGreaterThanOrEqual(0);
+      expect(deleteIndex).toBeGreaterThan(trashPutIndex);
+      expect(manifestPutIndex).toBeGreaterThan(deleteIndex);
+    } finally {
+      nowSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('edits sidebar project metadata only after double click', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
