@@ -123,28 +123,24 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
       if (url.endsWith('/projects/hosted-study.codetrail.json')) {
         return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
       }
       return Promise.resolve(new Response('', { status: 404 }));
     });
     vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([
+        {
+          title: 'Hosted study',
+          path: 'hosted-study.codetrail.json',
+          description: 'A hosted fixture.',
+          document: hostedDocument,
+          source: 'local'
+        }
+      ])
+    );
 
     try {
       render(<App />);
@@ -160,27 +156,10 @@ describe('CodeTrail editor', () => {
   });
 
   it('opens project actions from a sidebar item context menu', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      return Promise.resolve(new Response('', { status: 404 }));
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([{ title: 'Hosted study', path: 'hosted-study.codetrail.json', description: 'A hosted fixture.', source: 'local' }])
+    );
 
     try {
       render(<App />);
@@ -196,32 +175,14 @@ describe('CodeTrail editor', () => {
       expect(screen.getByRole('button', { name: 'Export HTML' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
     } finally {
-      vi.unstubAllGlobals();
     }
   });
 
   it('deletes a project from the sidebar item action', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      return Promise.resolve(new Response('', { status: 404 }));
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([{ title: 'Hosted study', path: 'hosted-study.codetrail.json', description: 'A hosted fixture.', source: 'local' }])
+    );
 
     try {
       render(<App />);
@@ -232,7 +193,6 @@ describe('CodeTrail editor', () => {
       expect(projectTitle).not.toBeInTheDocument();
       expect(screen.getByText('Deleted Hosted study locally only. Add a GitHub token to move remote files to trash.')).toBeInTheDocument();
     } finally {
-      vi.unstubAllGlobals();
     }
   });
 
@@ -263,18 +223,17 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
+      if (url.includes('/contents/public/projects?') && !init?.method) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
+            JSON.stringify([
+              {
+                name: 'hosted-study.codetrail.json',
+                path: 'public/projects/hosted-study.codetrail.json',
+                type: 'file',
+                download_url: 'http://localhost/projects/hosted-study.codetrail.json'
+              }
+            ]),
             { status: 200 }
           )
         );
@@ -288,17 +247,11 @@ describe('CodeTrail editor', () => {
       if (url.includes('/contents/public/projects/hosted-study.codetrail.json') && init?.method === 'DELETE') {
         return Promise.resolve(new Response(JSON.stringify({ content: null }), { status: 200 }));
       }
-      if (url.includes('/contents/public/projects/manifest.json') && init?.method === 'PUT') {
-        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'manifest-sha-next' } }), { status: 200 }));
-      }
       if (url.includes('/contents/public/projects/trash/')) {
         return Promise.resolve(new Response('', { status: 404 }));
       }
       if (url.includes('/contents/public/projects/hosted-study.codetrail.json')) {
         return Promise.resolve(new Response(JSON.stringify({ sha: 'project-sha' }), { status: 200 }));
-      }
-      if (url.includes('/contents/public/projects/manifest.json')) {
-        return Promise.resolve(new Response(JSON.stringify({ sha: 'manifest-sha' }), { status: 200 }));
       }
       return Promise.resolve(new Response('', { status: 404 }));
     });
@@ -319,12 +272,9 @@ describe('CodeTrail editor', () => {
       const deleteIndex = calls.findIndex(
         (call) => call.method === 'DELETE' && call.url.includes('/contents/public/projects/hosted-study.codetrail.json')
       );
-      const manifestPutIndex = calls.findIndex(
-        (call) => call.method === 'PUT' && call.url.includes('/contents/public/projects/manifest.json')
-      );
       expect(trashPutIndex).toBeGreaterThanOrEqual(0);
       expect(deleteIndex).toBeGreaterThan(trashPutIndex);
-      expect(manifestPutIndex).toBeGreaterThan(deleteIndex);
+      expect(calls.some((call) => call.url.includes('/contents/public/projects/manifest.json'))).toBe(false);
     } finally {
       nowSpy.mockRestore();
       vi.unstubAllGlobals();
@@ -357,18 +307,17 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
+      if (url.includes('/contents/public/projects?') && !init?.method) {
         return Promise.resolve(
           new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
+            JSON.stringify([
+              {
+                name: 'hosted-study.codetrail.json',
+                path: 'public/projects/hosted-study.codetrail.json',
+                type: 'file',
+                download_url: 'http://localhost/projects/hosted-study.codetrail.json'
+              }
+            ]),
             { status: 200 }
           )
         );
@@ -406,27 +355,10 @@ describe('CodeTrail editor', () => {
   });
 
   it('edits sidebar project metadata only after double click', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      return Promise.resolve(new Response('', { status: 404 }));
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([{ title: 'Hosted study', path: 'hosted-study.codetrail.json', description: 'A hosted fixture.', source: 'local' }])
+    );
 
     try {
       render(<App />);
@@ -440,7 +372,6 @@ describe('CodeTrail editor', () => {
       expect(titleInput).toHaveValue('Hosted study');
       expect(screen.getByLabelText('Hosted study description')).toHaveValue('A hosted fixture.');
     } finally {
-      vi.unstubAllGlobals();
     }
   });
 
@@ -457,8 +388,8 @@ describe('CodeTrail editor', () => {
     );
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      if (url.includes('/contents/public/projects?') && !init?.method) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
         return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
@@ -480,7 +411,7 @@ describe('CodeTrail editor', () => {
           .filter(([, init]) => init?.method === 'PUT')
           .map(([input]) => String(input));
         expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
-        expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+        expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(false);
       });
       expect(screen.getByText('Current project saved to the sidebar. New project created.')).toBeInTheDocument();
     } finally {
@@ -563,22 +494,6 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
       if (url.endsWith('/projects/hosted-study.codetrail.json')) {
         return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
       }
@@ -599,7 +514,7 @@ describe('CodeTrail editor', () => {
     }
   });
 
-  it('loads an embedded project directly when it is missing from the manifest', async () => {
+  it('loads an embedded project directly from the project query', async () => {
     const directDocument = {
       version: 1,
       metadata: {
@@ -629,9 +544,6 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
-      }
       if (url.endsWith('/projects/project-1779421516724-f3c27fcf.codetrail.json')) {
         return Promise.resolve(new Response(JSON.stringify(directDocument), { status: 200 }));
       }
@@ -681,22 +593,6 @@ describe('CodeTrail editor', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
       if (url.endsWith('/projects/hosted-study.codetrail.json')) {
         return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
       }
@@ -741,8 +637,8 @@ describe('CodeTrail editor', () => {
     );
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      if (url.includes('/contents/public/projects?') && !init?.method) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
         return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
@@ -774,7 +670,7 @@ describe('CodeTrail editor', () => {
         .filter(([, init]) => init?.method === 'PUT')
         .map(([input]) => String(input));
       expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
-      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(false);
       expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -795,8 +691,8 @@ describe('CodeTrail editor', () => {
     );
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      if (url.includes('/contents/public/projects?') && !init?.method) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
         return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
@@ -823,7 +719,7 @@ describe('CodeTrail editor', () => {
         .filter(([, init]) => init?.method === 'PUT')
         .map(([input]) => String(input));
       expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
-      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(false);
       expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -837,27 +733,10 @@ describe('CodeTrail editor', () => {
       configurable: true,
       value: { writeText }
     });
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/projects/manifest.json')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              files: [
-                {
-                  title: 'Hosted study',
-                  path: 'hosted-study.codetrail.json',
-                  description: 'A hosted fixture.'
-                }
-              ]
-            }),
-            { status: 200 }
-          )
-        );
-      }
-      return Promise.resolve(new Response('', { status: 404 }));
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([{ title: 'Hosted study', path: 'hosted-study.codetrail.json', description: 'A hosted fixture.', source: 'local' }])
+    );
 
     try {
       render(<App />);
@@ -873,7 +752,6 @@ describe('CodeTrail editor', () => {
       expect(writeText).toHaveBeenCalledWith(expect.stringContaining('project=hosted-study.codetrail.json'));
       await waitFor(() => expect(screen.getByText('Copied Notion link for Hosted study.')).toBeInTheDocument());
     } finally {
-      vi.unstubAllGlobals();
     }
   });
 

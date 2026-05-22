@@ -67,11 +67,8 @@ type HostedProjectEntry = {
   path: string;
   description?: string;
   document?: CodeTrailDocument;
+  downloadUrl?: string;
   source?: 'hosted' | 'local';
-};
-
-type HostedProjectManifest = {
-  files: HostedProjectEntry[];
 };
 
 type GitHubSyncConfig = {
@@ -82,7 +79,7 @@ type GitHubSyncConfig = {
   token: string;
 };
 
-const HOSTED_PROJECT_MANIFEST = 'projects/manifest.json';
+const HOSTED_PROJECT_FOLDER = 'projects';
 const LOCAL_PROJECT_LIBRARY_KEY = 'codetrail.projectLibrary';
 const GITHUB_SYNC_CONFIG_KEY = 'codetrail.githubSyncConfig';
 const PROJECT_LIBRARY_LOADING_STATUS = 'Loading project library...';
@@ -182,12 +179,8 @@ function createAnchorFromSelection(selection: SelectedCodeAnchor): CallAnchor {
   });
 }
 
-function manifestUrl(): URL {
-  return new URL(HOSTED_PROJECT_MANIFEST, window.location.href);
-}
-
-function projectUrlFromManifest(path: string): URL {
-  return new URL(path, manifestUrl());
+function projectUrlFromPath(path: string): URL {
+  return new URL(`${HOSTED_PROJECT_FOLDER}/${fileNameFromProjectPath(path)}`, window.location.href);
 }
 
 function embedProjectPathFromLocation(): string | null {
@@ -200,46 +193,6 @@ function embedUrlForProject(path: string): string {
   url.searchParams.set('embed', '1');
   url.searchParams.set('project', fileNameFromProjectPath(path));
   return url.toString();
-}
-
-function hostedProjectManifestContent(projects: HostedProjectEntry[], activeEntry?: HostedProjectEntry): string {
-  const manifest: HostedProjectManifest = {
-    files: projects.map((project) => ({
-      title: activeEntry && project.path === activeEntry.path ? activeEntry.title : project.title,
-      path: fileNameFromProjectPath(project.path),
-      description: activeEntry && project.path === activeEntry.path ? activeEntry.description : project.description
-    }))
-  };
-  return JSON.stringify(manifest, null, 2);
-}
-
-function parseHostedProjectManifest(value: unknown): HostedProjectManifest {
-  if (!value || typeof value !== 'object' || !Array.isArray((value as { files?: unknown }).files)) {
-    throw new Error('Project library manifest must contain a files array.');
-  }
-
-  const files = (value as { files: unknown[] }).files.map((entry, index) => {
-    if (!entry || typeof entry !== 'object') {
-      throw new Error(`Project library entry ${index + 1} must be an object.`);
-    }
-
-    const item = entry as { title?: unknown; path?: unknown; description?: unknown };
-    if (typeof item.title !== 'string' || !item.title.trim()) {
-      throw new Error(`Project library entry ${index + 1} is missing a title.`);
-    }
-    if (typeof item.path !== 'string' || !item.path.trim()) {
-      throw new Error(`Project library entry ${index + 1} is missing a path.`);
-    }
-
-    return {
-      title: item.title,
-      path: item.path,
-      description: typeof item.description === 'string' ? item.description : undefined,
-      source: 'hosted' as const
-    };
-  });
-
-  return { files };
 }
 
 function loadLocalProjectLibrary(): HostedProjectEntry[] {
@@ -339,6 +292,82 @@ async function githubContentSha(config: GitHubSyncConfig, path: string): Promise
   }
   const payload = await response.json() as { sha?: string };
   return payload.sha;
+}
+
+type GitHubDirectoryItem = {
+  name?: string;
+  path?: string;
+  type?: string;
+  download_url?: string | null;
+};
+
+async function listGitHubProjectFiles(config: GitHubSyncConfig): Promise<HostedProjectEntry[]> {
+  if (!config.token.trim()) {
+    throw new Error('GitHub token is required before listing projects.');
+  }
+
+  const folder = config.folder.replace(/^\/+|\/+$/g, '');
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${encodeURI(folder)}?ref=${encodeURIComponent(config.branch)}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${config.token}`,
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(await githubErrorMessage(response, `GitHub project folder read failed for ${folder}`));
+  }
+
+  const payload = await response.json() as GitHubDirectoryItem[];
+  if (!Array.isArray(payload)) {
+    throw new Error(`GitHub project folder ${folder} is not a directory.`);
+  }
+
+  const files = payload
+    .filter((item) =>
+      item.type === 'file' &&
+      typeof item.name === 'string' &&
+      /\.codetrail\.json$/i.test(item.name)
+    )
+    .sort((left, right) => (left.name ?? '').localeCompare(right.name ?? ''));
+
+  const entries = await Promise.all(files.map(async (item): Promise<HostedProjectEntry> => {
+    const path = item.name ?? fileNameFromProjectPath(item.path ?? '');
+    const fallbackTitle = path.replace(/\.codetrail\.json$/i, '');
+    const downloadUrl = typeof item.download_url === 'string' ? item.download_url : undefined;
+
+    if (downloadUrl) {
+      try {
+        const projectResponse = await fetch(downloadUrl, { cache: 'no-store' });
+        if (projectResponse.ok) {
+          const parsed = parseDocument(await projectResponse.text());
+          const validation = validateDocument(parsed);
+          if (validation.valid) {
+            return {
+              title: parsed.metadata.title || fallbackTitle,
+              path,
+              description: parsed.metadata.description,
+              downloadUrl,
+              source: 'hosted'
+            };
+          }
+        }
+      } catch {
+        // Fall through to filename metadata when a single project cannot be previewed.
+      }
+    }
+
+    return {
+      title: fallbackTitle,
+      path,
+      downloadUrl,
+      source: 'hosted'
+    };
+  }));
+
+  return entries;
 }
 
 async function uploadGitHubContent(
@@ -659,25 +688,27 @@ function CodeTrailEditor() {
 
   const refreshHostedProjects = useCallback(async () => {
     try {
-      const response = await fetch(manifestUrl(), { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`Project library unavailable (${response.status}).`);
-      }
-      const manifest = parseHostedProjectManifest(await response.json());
       const localProjects = loadLocalProjectLibrary();
       const localPaths = new Set(localProjects.map((entry) => entry.path));
+      const hostedFiles = githubConfig.token.trim() ? await listGitHubProjectFiles(githubConfig) : [];
       const projects = [
         ...localProjects,
-        ...manifest.files.filter((entry) => !localPaths.has(entry.path))
+        ...hostedFiles.filter((entry) => !localPaths.has(entry.path))
       ];
       setHostedProjects(projects);
-      setHostedProjectStatus(projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : 'No projects yet.');
+      setHostedProjectStatus(
+        projects.length
+          ? `${projects.length} project${projects.length === 1 ? '' : 's'}`
+          : githubConfig.token.trim()
+            ? 'No projects yet.'
+            : 'No local projects. Add a GitHub token to list repository projects.'
+      );
     } catch (error) {
       const localProjects = loadLocalProjectLibrary();
       setHostedProjects(localProjects);
       setHostedProjectStatus(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [githubConfig]);
 
   useEffect(() => {
     void refreshHostedProjects();
@@ -1259,23 +1290,15 @@ function CodeTrailEditor() {
 
   const uploadProjectToGitHub = async (
     entry: HostedProjectEntry,
-    projectDocument: CodeTrailDocument,
-    projects: HostedProjectEntry[] = hostedProjects
+    projectDocument: CodeTrailDocument
   ) => {
     const jsonPath = githubProjectPath(githubConfig, entry.path);
-    const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
 
     await uploadGitHubContent(
       githubConfig,
       jsonPath,
       serializeDocument(projectDocument),
       `Update CodeTrail project ${entry.title}`
-    );
-    await uploadGitHubContent(
-      githubConfig,
-      manifestPath,
-      hostedProjectManifestContent(projects, entry),
-      'Update CodeTrail project manifest'
     );
     setGithubSyncStatus(`Uploaded ${entry.title} to GitHub.`);
   };
@@ -1348,7 +1371,7 @@ function CodeTrailEditor() {
       isGitHubAutoSavingRef.current = true;
       setGithubSyncStatus(`Uploading ${nextEntry.title} to GitHub...`);
       setStatus(`Uploading ${nextEntry.title} to GitHub...`);
-      void uploadProjectToGitHub(nextEntry, document, nextProjects)
+      void uploadProjectToGitHub(nextEntry, document)
         .then(() => {
           lastGitHubAutoSavedDocumentRef.current = document;
           setStatus(`Auto-saved ${nextEntry.title} to GitHub.`);
@@ -1424,7 +1447,7 @@ function CodeTrailEditor() {
     persistProjectList(nextProjects);
     if (githubConfig.token.trim()) {
       try {
-        await uploadProjectToGitHub(savedCurrentEntry, document, nextProjects);
+        await uploadProjectToGitHub(savedCurrentEntry, document);
       } catch (error) {
         setGithubSyncStatus(error instanceof Error ? error.message : String(error));
       }
@@ -1440,7 +1463,7 @@ function CodeTrailEditor() {
     if (entry.document) {
       return entry.document;
     }
-    const response = await fetch(projectUrlFromManifest(entry.path), { cache: 'no-store' });
+    const response = await fetch(entry.downloadUrl ?? projectUrlFromPath(entry.path), { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`Could not load ${entry.path} (${response.status}).`);
     }
@@ -1489,11 +1512,7 @@ function CodeTrailEditor() {
     setProjectPath(savedPath);
 
     if (githubConfig.token.trim()) {
-      await uploadProjectToGitHub(
-        nextEntry,
-        document,
-        nextProjects
-      );
+      await uploadProjectToGitHub(nextEntry, document);
     }
 
     setStatus(statusMessage);
@@ -1550,11 +1569,7 @@ function CodeTrailEditor() {
     setProjectPath(entry.path);
 
     if (githubConfig.token.trim()) {
-      await uploadProjectToGitHub(
-        nextEntry,
-        document,
-        nextProjects
-      );
+      await uploadProjectToGitHub(nextEntry, document);
     }
 
     setStatus(`Saved current project to ${entry.title}.`);
@@ -1608,7 +1623,6 @@ function CodeTrailEditor() {
     try {
       const projectPath = githubProjectPath(githubConfig, entry.path);
       const trashPath = githubTrashProjectPath(githubConfig, entry.path);
-      const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
       const projectDocument = entry.path === activeHostedProjectPath ? document : await getProjectDocument(entry);
       setGithubSyncStatus(`Moving ${entry.title} to ${trashPath}...`);
       setStatus(`Moving ${entry.title} to GitHub trash...`);
@@ -1619,12 +1633,6 @@ function CodeTrailEditor() {
         `Move CodeTrail project ${entry.title} to trash`
       );
       await deleteGitHubContent(githubConfig, projectPath, `Delete CodeTrail project ${entry.title}`);
-      await uploadGitHubContent(
-        githubConfig,
-        manifestPath,
-        hostedProjectManifestContent(nextProjects),
-        'Update CodeTrail project manifest'
-      );
       persistProjectList(nextProjects);
       if (activeHostedProjectPath === entry.path) {
         setActiveHostedProjectPath(null);
@@ -1795,7 +1803,7 @@ function CodeTrailEditor() {
               </article>
             ))}
             {hostedProjects.length === 0 ? (
-              <p className="project-list__empty">Add files under public/projects and list them in manifest.json.</p>
+              <p className="project-list__empty">Add .codetrail.json files under the configured project folder.</p>
             ) : null}
           </div>
           {contextProject ? (
