@@ -4,7 +4,7 @@
     "title": "CodeTrail Study Map",
     "description": "",
     "createdAt": "2026-05-22T08:34:38.159Z",
-    "updatedAt": "2026-05-22T08:34:43.917Z"
+    "updatedAt": "2026-05-22T08:35:02.918Z"
   },
   "nodes": [
     {
@@ -51,6 +51,25 @@
       "collapsed": false,
       "color": "#e0f2fe",
       "scopeId": "scope_fb3f7b1a",
+      "callAnchors": []
+    },
+    {
+      "id": "node_6dce5ee0",
+      "title": "New function 3",
+      "language": "typescript",
+      "summary": "Paste a code snapshot here.",
+      "codeSnapshot": "function example() {\n  // paste code here\n}",
+      "position": {
+        "x": 660,
+        "y": 330
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": null,
       "callAnchors": []
     }
   ],
