@@ -1601,6 +1601,8 @@ function CodeTrailEditor() {
     setStatus(`Deleted ${entry.title} from the project list.`);
 
     if (!githubConfig.token.trim()) {
+      setGithubSyncStatus('GitHub sync not configured. Deleted from the local project list only.');
+      setStatus(`Deleted ${entry.title} locally only. Add a GitHub token to move remote files to trash.`);
       return;
     }
 
@@ -1609,6 +1611,8 @@ function CodeTrailEditor() {
       const trashPath = githubTrashProjectPath(githubConfig, entry.path);
       const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
       const projectDocument = entry.path === activeHostedProjectPath ? document : await getProjectDocument(entry);
+      setGithubSyncStatus(`Moving ${entry.title} to ${trashPath}...`);
+      setStatus(`Moving ${entry.title} to GitHub trash...`);
       await uploadGitHubContent(
         githubConfig,
         trashPath,
@@ -1622,8 +1626,8 @@ function CodeTrailEditor() {
         hostedProjectManifestContent(nextProjects),
         'Update CodeTrail project manifest'
       );
-      setGithubSyncStatus(`Moved ${entry.title} to GitHub trash.`);
-      setStatus(`Moved ${entry.title} to GitHub trash.`);
+      setGithubSyncStatus(`Moved ${entry.title} to ${trashPath}.`);
+      setStatus(`Moved ${entry.title} to GitHub trash: ${trashPath}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setGithubSyncStatus(message);

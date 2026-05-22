@@ -230,7 +230,7 @@ describe('CodeTrail editor', () => {
       fireEvent.click(screen.getByLabelText('Delete Hosted study'));
 
       expect(projectTitle).not.toBeInTheDocument();
-      expect(screen.getByText('Deleted Hosted study from the project list.')).toBeInTheDocument();
+      expect(screen.getByText('Deleted Hosted study locally only. Add a GitHub token to move remote files to trash.')).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -310,7 +310,7 @@ describe('CodeTrail editor', () => {
       await screen.findByText('Hosted study');
       fireEvent.click(screen.getByLabelText('Delete Hosted study'));
 
-      await waitFor(() => expect(screen.getAllByText('Moved Hosted study to GitHub trash.').length).toBeGreaterThan(0));
+      await waitFor(() => expect(screen.getAllByText(/Moved Hosted study to GitHub trash/).length).toBeGreaterThan(0));
 
       const calls = fetchMock.mock.calls.map(([input, init]) => ({ url: String(input), method: init?.method }));
       const trashPutIndex = calls.findIndex(
