@@ -320,6 +320,31 @@ select {
   white-space: nowrap;
 }
 
+.project-list__item-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-list__delete {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.project-list__delete:hover {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .project-list__item span {
   color: #475569;
   font-size: 12px;

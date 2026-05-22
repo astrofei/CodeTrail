@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -202,6 +202,17 @@ function embedUrlForProject(path: string): string {
   return url.toString();
 }
 
+function hostedProjectManifestContent(projects: HostedProjectEntry[], activeEntry?: HostedProjectEntry): string {
+  const manifest: HostedProjectManifest = {
+    files: projects.map((project) => ({
+      title: activeEntry && project.path === activeEntry.path ? activeEntry.title : project.title,
+      path: fileNameFromProjectPath(project.path),
+      description: activeEntry && project.path === activeEntry.path ? activeEntry.description : project.description
+    }))
+  };
+  return JSON.stringify(manifest, null, 2);
+}
+
 function parseHostedProjectManifest(value: unknown): HostedProjectManifest {
   if (!value || typeof value !== 'object' || !Array.isArray((value as { files?: unknown }).files)) {
     throw new Error('Project library manifest must contain a files array.');
@@ -365,6 +376,48 @@ async function uploadGitHubContent(
   }
 }
 
+async function deleteGitHubContent(config: GitHubSyncConfig, path: string, message: string): Promise<void> {
+  if (!config.token.trim()) {
+    throw new Error('GitHub token is required before deleting.');
+  }
+
+  const deleteContent = async () => {
+    const sha = await githubContentSha(config, path);
+    if (!sha) {
+      return null;
+    }
+    return fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${encodeURI(path)}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify({
+        branch: config.branch,
+        message,
+        sha
+      })
+    });
+  };
+
+  let response = await deleteContent();
+  if (!response) {
+    return;
+  }
+  if (response.status === 409) {
+    response = await deleteContent();
+    if (!response) {
+      return;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(await githubErrorMessage(response, `GitHub delete failed for ${path}`));
+  }
+}
+
 async function githubErrorMessage(response: Response, prefix: string): Promise<string> {
   try {
     const payload = await response.json() as { message?: string; documentation_url?: string };
@@ -451,7 +504,7 @@ function settleNodeScopeByFinalPosition(
 }
 
 function CodeTrailEditor() {
-  const { setViewport } = useReactFlow();
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const [document, setDocumentState] = useState<CodeTrailDocument>(() => {
     const doc = createEmptyDocument('CodeTrail Study Map');
     const scope = createScope({
@@ -506,6 +559,8 @@ function CodeTrailEditor() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const scopeDragRef = useRef<ScopeDragState | null>(null);
+  const selectionGestureActiveRef = useRef(false);
+  const selectedFlowNodesRef = useRef<Node[]>([]);
   const hasHydratedProjectLibraryRef = useRef(false);
   const lastAutoSavedDocumentRef = useRef<CodeTrailDocument | null>(null);
   const hasLoadedEmbedProjectRef = useRef(false);
@@ -919,8 +974,77 @@ function CodeTrailEditor() {
   );
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    selectedFlowNodesRef.current = params.nodes;
     setSelectedId(params.nodes[0]?.id ?? params.edges[0]?.id ?? null);
   }, []);
+
+  const createNodeAtCanvasPosition = useCallback(
+    (position: { x: number; y: number }) => {
+      const node = createCodeNode({
+        title: `New function ${document.nodes.length + 1}`,
+        summary: 'Paste a code snapshot here.',
+        position: {
+          x: Math.round(position.x),
+          y: Math.round(position.y)
+        }
+      });
+      setDocument({
+        ...document,
+        nodes: [...document.nodes, node]
+      });
+      setSelectedId(node.id);
+      setStatus('Created a node on the canvas.');
+    },
+    [document, setDocument]
+  );
+
+  const createScopeFromSelectedNodes = useCallback(() => {
+    const selectedCodeNodeIds = new Set(
+      selectedFlowNodesRef.current
+        .filter((node) => !document.scopes.some((scope) => scope.id === node.id))
+        .map((node) => node.id)
+    );
+    const selectedCodeNodes = document.nodes.filter((node) => selectedCodeNodeIds.has(node.id));
+    if (selectedCodeNodes.length === 0) {
+      return;
+    }
+    const bounds = boundsForRects(selectedCodeNodes.map((node) => ({ ...node.position, ...node.size })));
+    if (!bounds) {
+      return;
+    }
+    const scope = createScope({
+      title: `Scope ${document.scopes.length + 1}`,
+      bounds
+    });
+    setDocument({
+      ...document,
+      scopes: [...document.scopes, scope],
+      nodes: document.nodes.map((node) =>
+        selectedCodeNodeIds.has(node.id) ? { ...node, scopeId: scope.id } : node
+      )
+    });
+    setSelectedId(scope.id);
+    setStatus(`Created ${scope.title} around ${selectedCodeNodes.length} node${selectedCodeNodes.length === 1 ? '' : 's'}.`);
+  }, [document, setDocument]);
+
+  const handlePaneClick = useCallback(
+    (event: ReactMouseEvent) => {
+      if (focusedId) {
+        setFocusedId(null);
+        setStatus('Canvas zoom restored.');
+        return;
+      }
+      if (selectionGestureActiveRef.current) {
+        return;
+      }
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY
+      });
+      createNodeAtCanvasPosition(position);
+    },
+    [createNodeAtCanvasPosition, focusedId, screenToFlowPosition]
+  );
 
   const focusNode = useCallback(
     (node: Node) => {
@@ -1136,13 +1260,6 @@ function CodeTrailEditor() {
   ) => {
     const jsonPath = githubProjectPath(githubConfig, entry.path);
     const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
-    const manifest: HostedProjectManifest = {
-      files: projects.map((project) => ({
-        title: project.path === entry.path ? entry.title : project.title,
-        path: fileNameFromProjectPath(project.path),
-        description: project.path === entry.path ? entry.description : project.description
-      }))
-    };
 
     await uploadGitHubContent(
       githubConfig,
@@ -1153,7 +1270,7 @@ function CodeTrailEditor() {
     await uploadGitHubContent(
       githubConfig,
       manifestPath,
-      JSON.stringify(manifest, null, 2),
+      hostedProjectManifestContent(projects, entry),
       'Update CodeTrail project manifest'
     );
     setGithubSyncStatus(`Uploaded ${entry.title} to GitHub.`);
@@ -1469,6 +1586,39 @@ function CodeTrailEditor() {
     }
   };
 
+  const deleteProjectEntry = async (entry: HostedProjectEntry) => {
+    const nextProjects = hostedProjects.filter((project) => project.path !== entry.path);
+    persistProjectList(nextProjects);
+    if (activeHostedProjectPath === entry.path) {
+      setActiveHostedProjectPath(null);
+      setProjectPath(null);
+    }
+    setContextMenu(null);
+    setStatus(`Deleted ${entry.title} from the project list.`);
+
+    if (!githubConfig.token.trim()) {
+      return;
+    }
+
+    try {
+      const projectPath = githubProjectPath(githubConfig, entry.path);
+      const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
+      await deleteGitHubContent(githubConfig, projectPath, `Delete CodeTrail project ${entry.title}`);
+      await uploadGitHubContent(
+        githubConfig,
+        manifestPath,
+        hostedProjectManifestContent(nextProjects),
+        'Update CodeTrail project manifest'
+      );
+      setGithubSyncStatus(`Deleted ${entry.title} from GitHub.`);
+      setStatus(`Deleted ${entry.title} from GitHub.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setGithubSyncStatus(message);
+      setStatus(`GitHub delete failed: ${message}`);
+    }
+  };
+
   const contextProject = contextMenu
     ? hostedProjects.find((entry) => entry.path === contextMenu.path) ?? null
     : null;
@@ -1600,7 +1750,21 @@ function CodeTrailEditor() {
                   </>
                 ) : (
                   <>
-                    <strong>{entry.title}</strong>
+                    <div className="project-list__item-header">
+                      <strong>{entry.title}</strong>
+                      <button
+                        type="button"
+                        className="project-list__delete"
+                        title={`Delete ${entry.title}`}
+                        aria-label={`Delete ${entry.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void deleteProjectEntry(entry);
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                     {entry.description ? <span>{entry.description}</span> : <span className="project-list__description-empty">Double-click to add a description.</span>}
                   </>
                 )}
@@ -1628,6 +1792,9 @@ function CodeTrailEditor() {
               </button>
               <button onClick={() => { void copyProjectEmbedLink(contextProject); setContextMenu(null); }}>
                 <Link size={14} /> Copy Notion Link
+              </button>
+              <button onClick={() => { void deleteProjectEntry(contextProject); }}>
+                <Trash2 size={14} /> Delete
               </button>
             </div>
           ) : null}
@@ -1676,15 +1843,21 @@ function CodeTrailEditor() {
             }}
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
+            onSelectionStart={() => {
+              selectionGestureActiveRef.current = true;
+            }}
+            onSelectionEnd={() => {
+              if (selectionGestureActiveRef.current) {
+                createScopeFromSelectedNodes();
+              }
+              window.setTimeout(() => {
+                selectionGestureActiveRef.current = false;
+              }, 0);
+            }}
             onNodeClick={(_, node) => setSelectedId(node.id)}
             onNodeDoubleClick={(_, node) => focusNode(node)}
             onEdgeClick={(_, edge) => setSelectedId(edge.id)}
-            onPaneClick={() => {
-              if (focusedId) {
-                setFocusedId(null);
-                setStatus('Canvas zoom restored.');
-              }
-            }}
+            onPaneClick={handlePaneClick}
             edgesFocusable={!focusedId}
             nodesFocusable={!focusedId}
             elementsSelectable={!focusedId}
@@ -1693,7 +1866,8 @@ function CodeTrailEditor() {
             panOnScroll={!focusedId}
             zoomOnPinch={!focusedId}
             zoomOnDoubleClick={!focusedId}
-            panOnDrag={!focusedId}
+            selectionOnDrag={!focusedId}
+            panOnDrag={focusedId ? false : [1, 2]}
             panActivationKeyCode={focusedId ? null : 'Space'}
             zoomActivationKeyCode={focusedId ? null : undefined}
             nodesDraggable={!focusedId}

@@ -194,6 +194,43 @@ describe('CodeTrail editor', () => {
       expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Save As' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Export HTML' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('deletes a project from the sidebar item action', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      const projectTitle = await screen.findByText('Hosted study');
+      fireEvent.click(screen.getByLabelText('Delete Hosted study'));
+
+      expect(projectTitle).not.toBeInTheDocument();
+      expect(screen.getByText('Deleted Hosted study from the project list.')).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }
