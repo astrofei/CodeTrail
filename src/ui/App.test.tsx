@@ -691,7 +691,7 @@ describe('CodeTrail editor', () => {
     }
   });
 
-  it('auto-saves current document edits to GitHub even before a project is manually saved', async () => {
+  it('does not upload document edits to GitHub until the user explicitly saves', async () => {
     window.localStorage.setItem(
       'codetrail.githubSyncConfig',
       JSON.stringify({
@@ -736,16 +736,16 @@ describe('CodeTrail editor', () => {
       const putUrls = fetchMock.mock.calls
         .filter(([, init]) => init?.method === 'PUT')
         .map(([input]) => String(input));
-      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(false);
       expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(false);
-      expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
+      expect(screen.queryByText('Auto-saved CodeTrail Study Map to GitHub.')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });
 
-  it('creates a GitHub project automatically when a token is configured and no project is active', async () => {
+  it('does not create a GitHub project just because a token is configured', async () => {
     window.localStorage.setItem(
       'codetrail.githubSyncConfig',
       JSON.stringify({
@@ -785,9 +785,9 @@ describe('CodeTrail editor', () => {
       const putUrls = fetchMock.mock.calls
         .filter(([, init]) => init?.method === 'PUT')
         .map(([input]) => String(input));
-      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
+      expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(false);
       expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(false);
-      expect(screen.getByText('Auto-saved CodeTrail Study Map to GitHub.')).toBeInTheDocument();
+      expect(screen.queryByText('Auto-saved CodeTrail Study Map to GitHub.')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();

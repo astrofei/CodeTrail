@@ -83,7 +83,6 @@ const HOSTED_PROJECT_FOLDER = 'projects';
 const LOCAL_PROJECT_LIBRARY_KEY = 'codetrail.projectLibrary';
 const GITHUB_SYNC_CONFIG_KEY = 'codetrail.githubSyncConfig';
 const PROJECT_LIBRARY_LOADING_STATUS = 'Loading project library...';
-const GITHUB_UPLOAD_DEBOUNCE_MS = 5000;
 const ENV_GITHUB_TOKEN =
   import.meta.env.MODE === 'test'
     ? ''
@@ -597,8 +596,6 @@ function CodeTrailEditor() {
   const hasHydratedProjectLibraryRef = useRef(false);
   const lastAutoSavedDocumentRef = useRef<CodeTrailDocument | null>(null);
   const hasLoadedEmbedProjectRef = useRef(false);
-  const lastGitHubAutoSavedDocumentRef = useRef<CodeTrailDocument | null>(null);
-  const isGitHubAutoSavingRef = useRef(false);
 
   const setDocument = useCallback((next: CodeTrailDocument) => {
     setDocumentState({ ...next, metadata: { ...next.metadata, updatedAt: new Date().toISOString() } });
@@ -1300,17 +1297,6 @@ function CodeTrailEditor() {
     setGithubSyncStatus(`Uploaded ${entry.title} to GitHub.`);
   };
 
-  const saveActiveProjectToGitHub = async () => {
-    if (!activeHostedProjectPath) {
-      throw new Error('No active project selected.');
-    }
-    const activeEntry = hostedProjects.find((entry) => entry.path === activeHostedProjectPath);
-    if (!activeEntry) {
-      throw new Error('Active project is missing from the project library.');
-    }
-    await uploadProjectToGitHub(activeEntry, document);
-  };
-
   useEffect(() => {
     if (!activeHostedProjectPath) {
       return;
@@ -1344,47 +1330,6 @@ function CodeTrailEditor() {
 
     return () => window.clearTimeout(timeoutId);
   }, [activeHostedProjectPath, document, hostedProjects]);
-
-  useEffect(() => {
-    if (!githubConfig.token.trim()) {
-      return;
-    }
-    const shouldCreateRemoteProject = !activeHostedProjectPath;
-    if (!lastGitHubAutoSavedDocumentRef.current && !shouldCreateRemoteProject) {
-      lastGitHubAutoSavedDocumentRef.current = document;
-      return;
-    }
-    if (lastGitHubAutoSavedDocumentRef.current === document || isGitHubAutoSavingRef.current) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      const { path, nextEntry, nextProjects } = buildCurrentProjectListUpdate(activeHostedProjectPath);
-      persistProjectList(nextProjects);
-      if (path !== activeHostedProjectPath) {
-        setActiveHostedProjectPath(path);
-        setProjectPath(path);
-      }
-      isGitHubAutoSavingRef.current = true;
-      setGithubSyncStatus(`Uploading ${nextEntry.title} to GitHub...`);
-      setStatus(`Uploading ${nextEntry.title} to GitHub...`);
-      void uploadProjectToGitHub(nextEntry, document)
-        .then(() => {
-          lastGitHubAutoSavedDocumentRef.current = document;
-          setStatus(`Auto-saved ${nextEntry.title} to GitHub.`);
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          setGithubSyncStatus(message);
-          setStatus(`GitHub auto-save failed: ${message}`);
-        })
-        .finally(() => {
-          isGitHubAutoSavingRef.current = false;
-        });
-    }, GITHUB_UPLOAD_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [activeHostedProjectPath, document, githubConfig, hostedProjects]);
 
   const updateProjectEntry = (path: string, patch: Partial<HostedProjectEntry>) => {
     persistProjectList(
@@ -1916,7 +1861,7 @@ function CodeTrailEditor() {
           {isEmbedMode ? (
             <div className="embed-savebar">
               <strong>{hostedProjects.find((entry) => entry.path === activeHostedProjectPath)?.title ?? document.metadata.title}</strong>
-              <span>{githubConfig.token.trim() ? 'Auto-saves locally and to GitHub after edits.' : 'Auto-saves locally after edits.'}</span>
+              <span>{githubConfig.token.trim() ? 'Auto-saves locally. Use Save to upload to GitHub.' : 'Auto-saves locally after edits.'}</span>
             </div>
           ) : null}
         </div>
