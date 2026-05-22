@@ -143,7 +143,11 @@ export function toFlowNodes(
   return [...scopeNodes, ...codeNodes];
 }
 
-export function toFlowEdges(document: CodeTrailDocument, onDeleteEdge?: (edgeId: string) => void): Edge[] {
+export function toFlowEdges(
+  document: CodeTrailDocument,
+  onDeleteEdge?: (edgeId: string) => void,
+  onUpdateEdgeLabel?: (edgeId: string, label: string) => void
+): Edge[] {
   return document.edges.map((edge) => ({
     id: edge.id,
     source: edge.sourceNodeId,
@@ -159,6 +163,7 @@ export function toFlowEdges(document: CodeTrailDocument, onDeleteEdge?: (edgeId:
     data: {
       codeTrailEdge: edge,
       onDeleteEdge,
+      onUpdateEdgeLabel,
       sourceNode: document.nodes.find((node) => node.id === edge.sourceNodeId) ?? null,
       targetNode: document.nodes.find((node) => node.id === edge.targetNodeId) ?? null
     }

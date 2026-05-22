@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from '@xyflow/react';
 import { X } from 'lucide-react';
 
@@ -49,7 +50,11 @@ export function CallEdgeView({
   targetX,
   targetY
 }: EdgeProps) {
-  const edgeData = data as { onDeleteEdge?: (edgeId: string) => void } | undefined;
+  const edgeData = data as {
+    onDeleteEdge?: (edgeId: string) => void;
+    onUpdateEdgeLabel?: (edgeId: string, label: string) => void;
+  } | undefined;
+  const [editingLabel, setEditingLabel] = useState(false);
   const { labelClassName, labelX, labelY, path } = buildReadablePath(
     { x: sourceX, y: sourceY },
     { x: targetX, y: targetY }
@@ -67,15 +72,44 @@ export function CallEdgeView({
         }}
       />
       <EdgeLabelRenderer>
-        {label && (
-          <div
-            className={labelClassName}
+        {label && !editingLabel && (
+          <button
+            type="button"
+            className={`${labelClassName} edge-label-button nodrag nopan`}
+            title="Edit connection label"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`
             }}
+            onClick={(event) => {
+              event.stopPropagation();
+              setEditingLabel(true);
+            }}
           >
             {label}
-          </div>
+          </button>
+        )}
+        {editingLabel && (
+          <input
+            className="edge-label-input nodrag nopan"
+            autoFocus
+            defaultValue={typeof label === 'string' ? label : ''}
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onBlur={(event) => {
+              edgeData?.onUpdateEdgeLabel?.(id, event.target.value.trim() || 'calls');
+              setEditingLabel(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+              if (event.key === 'Escape') {
+                setEditingLabel(false);
+              }
+            }}
+          />
         )}
         {edgeData?.onDeleteEdge && (
           <button

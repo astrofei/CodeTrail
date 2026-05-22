@@ -152,6 +152,35 @@ function createAnchorFromSelection(selection: SelectedCodeAnchor): CallAnchor {
   });
 }
 
+function inferTitleFromSelectedCode(selectedCode: string): string {
+  const controlWords = new Set(['catch', 'for', 'if', 'switch', 'while']);
+
+  for (const rawLine of selectedCode.split('\n')) {
+    const line = rawLine
+      .replace(/\/\/.*$/, '')
+      .replace(/\/\*.*?\*\//g, '')
+      .trim();
+    if (!line || line.startsWith('@')) {
+      continue;
+    }
+
+    const openParenIndex = line.indexOf('(');
+    if (openParenIndex < 0) {
+      continue;
+    }
+
+    const beforeParen = line.slice(0, openParenIndex);
+    const identifiers = beforeParen.match(/[A-Za-z_$][\w$]*/g) ?? [];
+    const candidate = identifiers[identifiers.length - 1];
+    if (candidate && !controlWords.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const fallback = selectedCode.trim().split('\n')[0]?.trim().replace(/\s+/g, ' ') ?? '';
+  return fallback ? fallback.slice(0, 48) : 'Selected code';
+}
+
 function settleNodeScopeByFinalPosition(
   beforeDrag: CodeTrailDocument,
   afterDrag: CodeTrailDocument,
@@ -327,7 +356,7 @@ function CodeTrailEditor() {
 
       const anchor = createAnchorFromSelection(selection);
       const node = createCodeNode({
-        title: 'Selected code',
+        title: inferTitleFromSelectedCode(selection.selectedText),
         language: sourceNode.language,
         summary: 'Created from a selected code block.',
         codeSnapshot: selection.selectedText,
@@ -465,6 +494,17 @@ function CodeTrailEditor() {
     [document, setDocument]
   );
 
+  const updateEdgeLabel = useCallback(
+    (edgeId: string, label: string) => {
+      setDocument({
+        ...document,
+        edges: document.edges.map((edge) => (edge.id === edgeId ? { ...edge, label } : edge))
+      });
+      setStatus('Connection label updated.');
+    },
+    [document, setDocument]
+  );
+
   const focusCodeNode = useCallback(
     (id: string, width?: number, height?: number) => {
       const node = document.nodes.find((item) => item.id === id);
@@ -515,7 +555,10 @@ function CodeTrailEditor() {
       ),
     [connectSelectionToNode, createNodeFromSelection, createSelectionAnchor, deleteEdge, document, focusCodeNode, focusedId, onResizeNode, onToggleNode, removeCallAnchor, selectedId, updateCodeNode]
   );
-  const mappedFlowEdges = useMemo(() => toFlowEdges(document, deleteEdge), [deleteEdge, document]);
+  const mappedFlowEdges = useMemo(
+    () => toFlowEdges(document, deleteEdge, updateEdgeLabel),
+    [deleteEdge, document, updateEdgeLabel]
+  );
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(mappedFlowNodes);
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(mappedFlowEdges);
 

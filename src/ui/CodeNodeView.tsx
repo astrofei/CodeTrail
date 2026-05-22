@@ -19,7 +19,7 @@ const MIN_CODE_PANEL_HEIGHT = 58;
 const KEYWORDS_BY_LANGUAGE: Record<string, string[]> = {
   typescript: ['async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'else', 'export', 'extends', 'for', 'from', 'function', 'if', 'import', 'interface', 'let', 'new', 'return', 'throw', 'try', 'type', 'while'],
   javascript: ['async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'else', 'export', 'extends', 'for', 'from', 'function', 'if', 'import', 'let', 'new', 'return', 'throw', 'try', 'while'],
-  java: ['boolean', 'break', 'case', 'catch', 'class', 'else', 'extends', 'final', 'for', 'if', 'implements', 'import', 'new', 'private', 'protected', 'public', 'return', 'static', 'throw', 'try', 'void', 'while'],
+  java: ['abstract', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float', 'for', 'if', 'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'null', 'override', 'package', 'private', 'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while'],
   kotlin: ['class', 'data', 'else', 'false', 'fun', 'if', 'import', 'interface', 'is', 'null', 'object', 'override', 'private', 'return', 'true', 'val', 'var', 'when', 'while'],
   python: ['as', 'async', 'await', 'class', 'def', 'elif', 'else', 'except', 'False', 'for', 'from', 'if', 'import', 'in', 'None', 'return', 'self', 'True', 'try', 'while', 'with'],
   rust: ['async', 'await', 'crate', 'else', 'enum', 'fn', 'for', 'if', 'impl', 'let', 'match', 'mod', 'mut', 'pub', 'return', 'self', 'struct', 'trait', 'use', 'while'],
@@ -39,8 +39,9 @@ function normalizeLanguage(language: string): string {
 }
 
 function renderHighlightedLine(line: string, language: string): ReactNode[] {
-  const keywords = new Set(KEYWORDS_BY_LANGUAGE[normalizeLanguage(language)] ?? []);
-  const pattern = /(\/\/.*|#.*|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
+  const normalizedLanguage = normalizeLanguage(language);
+  const keywords = new Set(KEYWORDS_BY_LANGUAGE[normalizedLanguage] ?? []);
+  const pattern = /(\/\/.*|#.*|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|@[A-Za-z_][A-Za-z0-9_]*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
   const parts: ReactNode[] = [];
   let cursor = 0;
   let index = 0;
@@ -53,14 +54,23 @@ function renderHighlightedLine(line: string, language: string): ReactNode[] {
     }
 
     let className = '';
-    if (value.startsWith('//') || value.startsWith('#') || value.startsWith('/*')) {
+    if (value.startsWith('//') || (value.startsWith('#') && normalizedLanguage !== 'c++') || value.startsWith('/*')) {
       className = 'syntax-comment';
     } else if (value.startsWith('"') || value.startsWith("'") || value.startsWith('`')) {
       className = 'syntax-string';
+    } else if (value.startsWith('@')) {
+      className = 'syntax-annotation';
     } else if (/^\d/.test(value)) {
       className = 'syntax-number';
     } else if (keywords.has(value)) {
       className = 'syntax-keyword';
+    } else {
+      const tail = line.slice(start + value.length);
+      if (/^\s*\(/.test(tail)) {
+        className = 'syntax-function';
+      } else if (/^[A-Z]/.test(value)) {
+        className = 'syntax-type';
+      }
     }
 
     parts.push(className ? <span key={`${start}-${index++}`} className={className}>{value}</span> : value);

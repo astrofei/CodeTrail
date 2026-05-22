@@ -418,6 +418,21 @@ select {
   color: #86efac;
 }
 
+.syntax-annotation {
+  color: #c4b5fd;
+  font-weight: 700;
+}
+
+.syntax-type {
+  color: #bae6fd;
+  font-weight: 700;
+}
+
+.syntax-function {
+  color: #fcd34d;
+  font-weight: 760;
+}
+
 .call-anchor-endpoint {
   position: absolute;
   right: -4px;
@@ -566,6 +581,28 @@ select {
   pointer-events: all;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.edge-label-button {
+  cursor: text;
+  font: inherit;
+}
+
+.edge-label-input {
+  position: absolute;
+  z-index: 80;
+  width: 150px;
+  min-height: 24px;
+  border: 1px solid #60a5fa;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  outline: 2px solid rgba(96, 165, 250, 0.28);
+  pointer-events: all;
 }
 
 .edge-label--outside {
