@@ -4,7 +4,7 @@
     "title": "CodeTrail Study Map",
     "description": "",
     "createdAt": "2026-05-22T08:36:28.082Z",
-    "updatedAt": "2026-05-22T08:43:10.685Z"
+    "updatedAt": "2026-05-22T08:44:52.117Z"
   },
   "nodes": [
     {
@@ -136,8 +136,8 @@
       "summary": "Paste a code snapshot here.",
       "codeSnapshot": "function example() {\n  // paste code here\n}",
       "position": {
-        "x": 178.1826484018265,
-        "y": 1529.13698630137
+        "x": 492.337899543379,
+        "y": 1646.9452054794522
       },
       "size": {
         "width": 360,
@@ -228,9 +228,9 @@
       "title": "Scope 5",
       "color": "#dcfce7",
       "bounds": {
-        "x": 154.1826484018265,
-        "y": 1461.13698630137,
-        "width": 408.00000000000006,
+        "x": 468.337899543379,
+        "y": 1578.9452054794522,
+        "width": 408,
         "height": 372
       }
     },
