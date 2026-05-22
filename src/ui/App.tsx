@@ -689,12 +689,9 @@ function CodeTrailEditor() {
   const refreshHostedProjects = useCallback(async () => {
     try {
       const localProjects = loadLocalProjectLibrary();
-      const localPaths = new Set(localProjects.map((entry) => entry.path));
-      const hostedFiles = githubConfig.token.trim() ? await listGitHubProjectFiles(githubConfig) : [];
-      const projects = [
-        ...localProjects,
-        ...hostedFiles.filter((entry) => !localPaths.has(entry.path))
-      ];
+      const projects = githubConfig.token.trim()
+        ? await listGitHubProjectFiles(githubConfig)
+        : localProjects;
       setHostedProjects(projects);
       setHostedProjectStatus(
         projects.length
@@ -705,7 +702,7 @@ function CodeTrailEditor() {
       );
     } catch (error) {
       const localProjects = loadLocalProjectLibrary();
-      setHostedProjects(localProjects);
+      setHostedProjects(githubConfig.token.trim() ? [] : localProjects);
       setHostedProjectStatus(error instanceof Error ? error.message : String(error));
     }
   }, [githubConfig]);

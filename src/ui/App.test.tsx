@@ -155,6 +155,73 @@ describe('CodeTrail editor', () => {
     }
   });
 
+  it('uses the GitHub project folder as the library source when sync is configured', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    window.localStorage.setItem(
+      'codetrail.projectLibrary',
+      JSON.stringify([
+        { title: 'Cached one', path: 'local/cached-one.codetrail.json', source: 'local' },
+        { title: 'Cached two', path: 'local/cached-two.codetrail.json', source: 'local' }
+      ])
+    );
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'GitHub study',
+        description: '',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/contents/public/projects?')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                name: 'github-study.codetrail.json',
+                path: 'public/projects/github-study.codetrail.json',
+                type: 'file',
+                download_url: 'http://localhost/projects/github-study.codetrail.json'
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/github-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      expect(await screen.findByText('GitHub study')).toBeInTheDocument();
+      expect(screen.getByText('1 project')).toBeInTheDocument();
+      expect(screen.queryByText('Cached one')).not.toBeInTheDocument();
+      expect(screen.queryByText('Cached two')).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('opens project actions from a sidebar item context menu', async () => {
     window.localStorage.setItem(
       'codetrail.projectLibrary',
