@@ -1,0 +1,9 @@
+{
+  "files": [
+    {
+      "title": "Example call chain",
+      "path": "example-call-chain.codetrail.json",
+      "description": "A small hosted CodeTrail document used to verify the GitHub Pages project library."
+    }
+  ]
+}

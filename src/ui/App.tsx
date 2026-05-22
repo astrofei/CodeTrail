@@ -12,7 +12,7 @@ import {
   useNodesState,
   useReactFlow
 } from '@xyflow/react';
-import { Download, FileDown, FilePlus2, FolderOpen, Save, SquareCode } from 'lucide-react';
+import { Download, FileDown, FilePlus2, FolderOpen, RefreshCw, Save } from 'lucide-react';
 import {
   createCallAnchor,
   createCodeNode,
@@ -61,6 +61,21 @@ type ScopeDragState = {
     position: { x: number; y: number };
   }>;
 };
+
+type HostedProjectEntry = {
+  title: string;
+  path: string;
+  description?: string;
+  document?: CodeTrailDocument;
+  source?: 'hosted' | 'local';
+};
+
+type HostedProjectManifest = {
+  files: HostedProjectEntry[];
+};
+
+const HOSTED_PROJECT_MANIFEST = 'projects/manifest.json';
+const LOCAL_PROJECT_LIBRARY_KEY = 'codetrail.projectLibrary';
 
 function intersects(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -150,6 +165,67 @@ function createAnchorFromSelection(selection: SelectedCodeAnchor): CallAnchor {
     endColumn: selection.endColumn,
     selectedText: selection.selectedText
   });
+}
+
+function manifestUrl(): URL {
+  return new URL(HOSTED_PROJECT_MANIFEST, window.location.href);
+}
+
+function projectUrlFromManifest(path: string): URL {
+  return new URL(path, manifestUrl());
+}
+
+function parseHostedProjectManifest(value: unknown): HostedProjectManifest {
+  if (!value || typeof value !== 'object' || !Array.isArray((value as { files?: unknown }).files)) {
+    throw new Error('Project library manifest must contain a files array.');
+  }
+
+  const files = (value as { files: unknown[] }).files.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`Project library entry ${index + 1} must be an object.`);
+    }
+
+    const item = entry as { title?: unknown; path?: unknown; description?: unknown };
+    if (typeof item.title !== 'string' || !item.title.trim()) {
+      throw new Error(`Project library entry ${index + 1} is missing a title.`);
+    }
+    if (typeof item.path !== 'string' || !item.path.trim()) {
+      throw new Error(`Project library entry ${index + 1} is missing a path.`);
+    }
+
+    return {
+      title: item.title,
+      path: item.path,
+      description: typeof item.description === 'string' ? item.description : undefined,
+      source: 'hosted' as const
+    };
+  });
+
+  return { files };
+}
+
+function loadLocalProjectLibrary(): HostedProjectEntry[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_PROJECT_LIBRARY_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as HostedProjectEntry[];
+    return Array.isArray(parsed)
+      ? parsed.filter((entry) => entry && typeof entry.title === 'string' && typeof entry.path === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeLocalProjectLibrary(projects: HostedProjectEntry[]): void {
+  const localProjects = projects.filter((entry) => entry.source === 'local' || entry.document);
+  window.localStorage.setItem(LOCAL_PROJECT_LIBRARY_KEY, JSON.stringify(localProjects));
+}
+
+function pathForNewLocalProject(): string {
+  return `local/project-${Date.now()}.codetrail.json`;
 }
 
 function inferTitleFromSelectedCode(selectedCode: string): string {
@@ -267,9 +343,17 @@ function CodeTrailEditor() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [status, setStatus] = useState('Ready');
+  const [hostedProjects, setHostedProjects] = useState<HostedProjectEntry[]>([]);
+  const [hostedProjectStatus, setHostedProjectStatus] = useState('Loading project library...');
+  const [activeHostedProjectPath, setActiveHostedProjectPath] = useState<string | null>(null);
+  const [projectLibraryTitle, setProjectLibraryTitle] = useState('Project Library');
+  const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [editingProjectPath, setEditingProjectPath] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const scopeDragRef = useRef<ScopeDragState | null>(null);
+  const hasHydratedProjectLibraryRef = useRef(false);
+  const lastAutoSavedDocumentRef = useRef<CodeTrailDocument | null>(null);
 
   const setDocument = useCallback((next: CodeTrailDocument) => {
     setDocumentState({ ...next, metadata: { ...next.metadata, updatedAt: new Date().toISOString() } });
@@ -346,6 +430,42 @@ function CodeTrailEditor() {
     },
     [document, setDocument]
   );
+
+  const refreshHostedProjects = useCallback(async () => {
+    try {
+      const response = await fetch(manifestUrl(), { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Project library unavailable (${response.status}).`);
+      }
+      const manifest = parseHostedProjectManifest(await response.json());
+      const localProjects = loadLocalProjectLibrary();
+      const localPaths = new Set(localProjects.map((entry) => entry.path));
+      const projects = [
+        ...localProjects,
+        ...manifest.files.filter((entry) => !localPaths.has(entry.path))
+      ];
+      setHostedProjects(projects);
+      setHostedProjectStatus(projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : 'No projects yet.');
+    } catch (error) {
+      const localProjects = loadLocalProjectLibrary();
+      setHostedProjects(localProjects);
+      setHostedProjectStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHostedProjects();
+  }, [refreshHostedProjects]);
+
+  useEffect(() => {
+    const closeContextMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeContextMenu);
+    window.addEventListener('keydown', closeContextMenu);
+    return () => {
+      window.removeEventListener('click', closeContextMenu);
+      window.removeEventListener('keydown', closeContextMenu);
+    };
+  }, []);
 
   const createNodeFromSelection = useCallback(
     (sourceNode: CodeTrailDocument['nodes'][number], selection: SelectedCodeAnchor) => {
@@ -787,29 +907,6 @@ function CodeTrailEditor() {
     [document, flowNodes]
   );
 
-  const addNode = () => {
-    const node = createCodeNode({
-      position: { x: 180 + document.nodes.length * 28, y: 160 + document.nodes.length * 22 }
-    });
-    setDocument({ ...document, nodes: [...document.nodes, node] });
-    setSelectedId(node.id);
-  };
-
-  const addScope = () => {
-    const scope = createScope({
-      bounds: { x: 80 + document.scopes.length * 40, y: 80 + document.scopes.length * 32, width: 560, height: 360 }
-    });
-    setDocument({ ...document, scopes: [...document.scopes, scope] });
-    setSelectedId(scope.id);
-  };
-
-  const newProject = () => {
-    setDocument(createEmptyDocument('Untitled CodeTrail'));
-    setProjectPath(null);
-    setSelectedId(null);
-    setStatus('New project created.');
-  };
-
   const loadContent = (content: string, path: string | null) => {
     const parsed = parseDocument(content);
     const validation = validateDocument(parsed);
@@ -818,8 +915,139 @@ function CodeTrailEditor() {
     }
     setDocument(parsed);
     setProjectPath(path);
+    setActiveHostedProjectPath(null);
     setSelectedId(null);
     setStatus(path ? `Opened ${path}` : 'Opened project.');
+  };
+
+  const persistProjectList = (projects: HostedProjectEntry[]) => {
+    setHostedProjects(projects);
+    setHostedProjectStatus(projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : 'No projects yet.');
+    storeLocalProjectLibrary(projects);
+  };
+
+  useEffect(() => {
+    if (!activeHostedProjectPath) {
+      return;
+    }
+    if (!hasHydratedProjectLibraryRef.current) {
+      hasHydratedProjectLibraryRef.current = true;
+      lastAutoSavedDocumentRef.current = document;
+      return;
+    }
+    if (lastAutoSavedDocumentRef.current === document) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const activeEntry = hostedProjects.find((entry) => entry.path === activeHostedProjectPath);
+      const nextEntry: HostedProjectEntry = {
+        ...activeEntry,
+        title: activeEntry?.title ?? document.metadata.title,
+        path: activeHostedProjectPath,
+        description: activeEntry?.description ?? document.metadata.description,
+        document,
+        source: 'local'
+      };
+      const nextProjects = activeEntry
+        ? hostedProjects.map((entry) => (entry.path === activeHostedProjectPath ? nextEntry : entry))
+        : [nextEntry, ...hostedProjects];
+      persistProjectList(nextProjects);
+      lastAutoSavedDocumentRef.current = document;
+      setStatus(`Auto-saved ${nextEntry.title}.`);
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeHostedProjectPath, document, hostedProjects]);
+
+  const updateProjectEntry = (path: string, patch: Partial<HostedProjectEntry>) => {
+    persistProjectList(
+      hostedProjects.map((entry) =>
+        entry.path === path
+          ? { ...entry, ...patch, source: 'local' }
+          : entry
+      )
+    );
+  };
+
+  const saveCurrentToProjectList = (preferredPath = activeHostedProjectPath): string => {
+    const path = preferredPath ?? pathForNewLocalProject();
+    const entry = hostedProjects.find((item) => item.path === path);
+    const nextEntry: HostedProjectEntry = {
+      ...entry,
+      title: document.metadata.title,
+      path,
+      description: document.metadata.description,
+      document,
+      source: 'local'
+    };
+    const nextProjects = entry
+      ? hostedProjects.map((item) => (item.path === path ? nextEntry : item))
+      : [nextEntry, ...hostedProjects];
+    persistProjectList(nextProjects);
+    return path;
+  };
+
+  const newProject = () => {
+    const currentPath = activeHostedProjectPath ?? pathForNewLocalProject();
+    const currentEntry = hostedProjects.find((item) => item.path === currentPath);
+    const savedCurrentEntry: HostedProjectEntry = {
+      ...currentEntry,
+      title: document.metadata.title,
+      path: currentPath,
+      description: document.metadata.description,
+      document,
+      source: 'local'
+    };
+    const nextDocument = createEmptyDocument('Untitled CodeTrail');
+    const path = pathForNewLocalProject();
+    const nextEntry: HostedProjectEntry = {
+      title: nextDocument.metadata.title,
+      path,
+      description: nextDocument.metadata.description,
+      document: nextDocument,
+      source: 'local'
+    };
+    const remainingProjects = hostedProjects.filter((entry) => entry.path !== currentPath && entry.path !== path);
+    persistProjectList([nextEntry, savedCurrentEntry, ...remainingProjects]);
+    setDocument(nextDocument);
+    setProjectPath(path);
+    setActiveHostedProjectPath(path);
+    setSelectedId(null);
+    setStatus('Current project saved to the sidebar. New project created.');
+  };
+
+  const getProjectDocument = async (entry: HostedProjectEntry): Promise<CodeTrailDocument> => {
+    if (entry.document) {
+      return entry.document;
+    }
+    const response = await fetch(projectUrlFromManifest(entry.path), { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Could not load ${entry.path} (${response.status}).`);
+    }
+    const parsed = parseDocument(await response.text());
+    const validation = validateDocument(parsed);
+    if (!validation.valid) {
+      throw new Error(validation.errors.join('\n'));
+    }
+    return parsed;
+  };
+
+  const loadHostedProject = async (entry: HostedProjectEntry) => {
+    try {
+      const parsed = await getProjectDocument(entry);
+      const validation = validateDocument(parsed);
+      if (!validation.valid) {
+        throw new Error(validation.errors.join('\n'));
+      }
+      setDocument(parsed);
+      setProjectPath(entry.path);
+      setActiveHostedProjectPath(entry.path);
+      setSelectedId(null);
+      setStatus(`Loaded hosted project ${entry.title}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const openProject = async () => {
@@ -871,27 +1099,131 @@ function CodeTrailEditor() {
     }
   };
 
+  const saveProjectEntry = (entry: HostedProjectEntry) => {
+    saveCurrentToProjectList(entry.path);
+    setActiveHostedProjectPath(entry.path);
+    setProjectPath(entry.path);
+    setStatus(`Saved current project to ${entry.title}.`);
+  };
+
+  const saveProjectEntryAs = async (entry: HostedProjectEntry) => {
+    try {
+      const projectDocument = entry.path === activeHostedProjectPath ? document : await getProjectDocument(entry);
+      const result = await saveTextNative(entry.path.split('/').pop() ?? 'project.codetrail.json', serializeDocument(projectDocument), 'application/json');
+      setStatus(result.usedBrowserDownload ? 'Project downloaded.' : result.path ? `Saved ${result.path}` : 'Save canceled.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const exportProjectEntryHtml = async (entry: HostedProjectEntry) => {
+    try {
+      const projectDocument = entry.path === activeHostedProjectPath ? document : await getProjectDocument(entry);
+      const fileName = `${entry.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'codetrail'}-viewer.html`;
+      const result = await saveTextNative(fileName, generateStaticHtml(projectDocument), 'text/html');
+      setStatus(result.usedBrowserDownload ? 'HTML exported as download.' : result.path ? `Exported ${result.path}` : 'Export canceled.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const contextProject = contextMenu
+    ? hostedProjects.find((entry) => entry.path === contextMenu.path) ?? null
+    : null;
+
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <SquareCode size={20} />
-          <div>
-            <strong>CodeTrail</strong>
-            <span>{projectPath ?? 'Unsaved local project'}</span>
-          </div>
-        </div>
-        <nav className="toolbar">
-          <button onClick={newProject}><FilePlus2 size={16} /> New</button>
-          <button onClick={openProject}><FolderOpen size={16} /> Open</button>
-          <button onClick={saveProject}><Save size={16} /> Save</button>
-          <button onClick={saveProjectAs}><Download size={16} /> Save As</button>
-          <button onClick={exportHtml}><FileDown size={16} /> Export HTML</button>
-          <button onClick={addNode}>Add Node</button>
-          <button onClick={addScope}>Add Scope</button>
-        </nav>
-      </header>
       <section className="workspace">
+        <aside className="project-sidebar" aria-label="Hosted project library">
+          <div className="project-sidebar__header">
+            <div className="project-sidebar__title">
+              <input
+                aria-label="Project library title"
+                value={projectLibraryTitle}
+                onChange={(event) => setProjectLibraryTitle(event.target.value)}
+              />
+              <span>{hostedProjectStatus}</span>
+            </div>
+            <div className="project-sidebar__actions">
+              <button className="icon-button" onClick={newProject} title="New project" aria-label="New project">
+                <FilePlus2 size={15} />
+              </button>
+              <button className="icon-button" onClick={openProject} title="Open project" aria-label="Open project">
+                <FolderOpen size={15} />
+              </button>
+              <button className="icon-button" onClick={() => void refreshHostedProjects()} title="Refresh project library" aria-label="Refresh project library">
+                <RefreshCw size={15} />
+              </button>
+            </div>
+          </div>
+          <div className="project-list">
+            {hostedProjects.map((entry) => (
+              <article
+                key={entry.path}
+                className={entry.path === activeHostedProjectPath ? 'project-list__item is-active' : 'project-list__item'}
+                onClick={() => void loadHostedProject(entry)}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  setEditingProjectPath(entry.path);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setContextMenu({ path: entry.path, x: event.clientX, y: event.clientY });
+                }}
+              >
+                {editingProjectPath === entry.path ? (
+                  <>
+                    <input
+                      aria-label={`${entry.title} title`}
+                      value={entry.title}
+                      autoFocus
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape' || event.key === 'Enter') {
+                          setEditingProjectPath(null);
+                        }
+                      }}
+                      onChange={(event) => updateProjectEntry(entry.path, { title: event.target.value || 'Untitled project' })}
+                    />
+                    <textarea
+                      aria-label={`${entry.title} description`}
+                      value={entry.description ?? ''}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => updateProjectEntry(entry.path, { description: event.target.value })}
+                      rows={2}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <strong>{entry.title}</strong>
+                    {entry.description ? <span>{entry.description}</span> : <span className="project-list__description-empty">Double-click to add a description.</span>}
+                  </>
+                )}
+                <small>{entry.path}</small>
+              </article>
+            ))}
+            {hostedProjects.length === 0 ? (
+              <p className="project-list__empty">Add files under public/projects and list them in manifest.json.</p>
+            ) : null}
+          </div>
+          {contextProject ? (
+            <div
+              className="project-context-menu"
+              style={{ left: contextMenu?.x ?? 0, top: contextMenu?.y ?? 0 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button onClick={() => { saveProjectEntry(contextProject); setContextMenu(null); }}>
+                <Save size={14} /> Save
+              </button>
+              <button onClick={() => { void saveProjectEntryAs(contextProject); setContextMenu(null); }}>
+                <Download size={14} /> Save As
+              </button>
+              <button onClick={() => { void exportProjectEntryHtml(contextProject); setContextMenu(null); }}>
+                <FileDown size={14} /> Export HTML
+              </button>
+            </div>
+          ) : null}
+        </aside>
         <div
           ref={canvasRef}
           className="canvas"

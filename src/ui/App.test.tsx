@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { App } from './App';
@@ -12,13 +12,19 @@ class ResizeObserverMock {
 globalThis.ResizeObserver = ResizeObserverMock;
 
 describe('CodeTrail editor', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
   it('renders the canvas shell and can add a node', async () => {
     render(<App />);
 
-    expect(screen.getByText('CodeTrail')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Add Node'));
-
-    expect(screen.getByText('New function')).toBeInTheDocument();
+    expect(screen.getByLabelText('Project library title')).toHaveValue('Project Library');
+    expect(screen.getByLabelText('New project')).toBeInTheDocument();
+    expect(screen.queryByText('Add Node')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add Scope')).not.toBeInTheDocument();
+    expect(screen.getByText('A.entry')).toBeInTheDocument();
   });
 
   it('shows the inline language picker on code nodes', async () => {
@@ -83,6 +89,151 @@ describe('CodeTrail editor', () => {
         configurable: true,
         value: originalScrollBy
       });
+    }
+  });
+
+  it('loads a hosted project from the project library sidebar', async () => {
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'Hosted study',
+        description: '',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [
+        {
+          id: 'node_hosted',
+          title: 'Hosted.entry',
+          language: 'typescript',
+          summary: 'Loaded from the hosted project folder.',
+          codeSnapshot: 'function hosted() {\n  return true;\n}',
+          position: { x: 120, y: 120 },
+          size: { width: 360, height: 280 },
+          collapsed: false,
+          color: '#e0f2fe',
+          scopeId: null,
+          callAnchors: []
+        }
+      ],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      const projectTitle = await screen.findByText('Hosted study');
+      fireEvent.click(projectTitle.closest('.project-list__item')!);
+
+      await waitFor(() => expect(screen.getByText('Hosted.entry')).toBeInTheDocument());
+      expect(screen.getByText('Loaded hosted project Hosted study.')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('opens project actions from a sidebar item context menu', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      const projectTitle = await screen.findByText('Hosted study');
+      fireEvent.contextMenu(projectTitle.closest('.project-list__item')!, {
+        clientX: 120,
+        clientY: 180
+      });
+
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save As' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Export HTML' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('edits sidebar project metadata only after double click', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      const title = await screen.findByText('Hosted study');
+      expect(screen.queryByLabelText('Hosted study title')).not.toBeInTheDocument();
+
+      fireEvent.doubleClick(title.closest('.project-list__item')!);
+
+      const titleInput = await screen.findByLabelText('Hosted study title');
+      expect(titleInput).toHaveValue('Hosted study');
+      expect(screen.getByLabelText('Hosted study description')).toHaveValue('A hosted fixture.');
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

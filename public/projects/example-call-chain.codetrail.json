@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "metadata": {
+    "title": "Example call chain",
+    "description": "A small hosted CodeTrail document.",
+    "createdAt": "2026-05-22T00:00:00.000Z",
+    "updatedAt": "2026-05-22T00:00:00.000Z"
+  },
+  "nodes": [
+    {
+      "id": "node_entry",
+      "title": "A.entry",
+      "language": "typescript",
+      "summary": "Entry point being reviewed.",
+      "codeSnapshot": "function entry() {\n  B.work();\n}",
+      "position": {
+        "x": 140,
+        "y": 160
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_reading",
+      "callAnchors": [
+        {
+          "id": "anchor_work",
+          "label": "B.work()",
+          "line": 2,
+          "startColumn": 2,
+          "endColumn": 10
+        }
+      ]
+    },
+    {
+      "id": "node_work",
+      "title": "B.work",
+      "language": "typescript",
+      "summary": "Called method.",
+      "codeSnapshot": "function work() {\n  return true;\n}",
+      "position": {
+        "x": 560,
+        "y": 190
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_reading",
+      "callAnchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_entry_work",
+      "sourceNodeId": "node_entry",
+      "sourceAnchorId": "anchor_work",
+      "targetNodeId": "node_work",
+      "label": "calls",
+      "color": "#2563eb"
+    }
+  ],
+  "scopes": [
+    {
+      "id": "scope_reading",
+      "title": "Reading scope",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 60,
+        "y": 70,
+        "width": 820,
+        "height": 430
+      }
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  }
+}
