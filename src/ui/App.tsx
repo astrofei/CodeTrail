@@ -12,7 +12,7 @@ import {
   useNodesState,
   useReactFlow
 } from '@xyflow/react';
-import { Download, FileDown, FilePlus2, FolderOpen, RefreshCw, Save } from 'lucide-react';
+import { Download, FileDown, FilePlus2, FolderOpen, Link, RefreshCw, Save } from 'lucide-react';
 import {
   createCallAnchor,
   createCodeNode,
@@ -74,8 +74,18 @@ type HostedProjectManifest = {
   files: HostedProjectEntry[];
 };
 
+type GitHubSyncConfig = {
+  owner: string;
+  repo: string;
+  branch: string;
+  folder: string;
+  token: string;
+};
+
 const HOSTED_PROJECT_MANIFEST = 'projects/manifest.json';
 const LOCAL_PROJECT_LIBRARY_KEY = 'codetrail.projectLibrary';
+const GITHUB_SYNC_CONFIG_KEY = 'codetrail.githubSyncConfig';
+const GITHUB_UPLOAD_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 function intersects(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
@@ -175,6 +185,18 @@ function projectUrlFromManifest(path: string): URL {
   return new URL(path, manifestUrl());
 }
 
+function embedProjectPathFromLocation(): string | null {
+  const params = new URL(window.location.href).searchParams;
+  return params.get('project');
+}
+
+function embedUrlForProject(path: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set('embed', '1');
+  url.searchParams.set('project', fileNameFromProjectPath(path));
+  return url.toString();
+}
+
 function parseHostedProjectManifest(value: unknown): HostedProjectManifest {
   if (!value || typeof value !== 'object' || !Array.isArray((value as { files?: unknown }).files)) {
     throw new Error('Project library manifest must contain a files array.');
@@ -225,7 +247,102 @@ function storeLocalProjectLibrary(projects: HostedProjectEntry[]): void {
 }
 
 function pathForNewLocalProject(): string {
-  return `local/project-${Date.now()}.codetrail.json`;
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(16).slice(2, 10);
+  return `local/project-${Date.now()}-${suffix}.codetrail.json`;
+}
+
+function defaultGitHubSyncConfig(): GitHubSyncConfig {
+  return {
+    owner: 'astrofei',
+    repo: 'CodeTrail',
+    branch: 'main',
+    folder: 'public/projects',
+    token: ''
+  };
+}
+
+function loadGitHubSyncConfig(): GitHubSyncConfig {
+  try {
+    return {
+      ...defaultGitHubSyncConfig(),
+      ...JSON.parse(window.localStorage.getItem(GITHUB_SYNC_CONFIG_KEY) ?? '{}')
+    };
+  } catch {
+    return defaultGitHubSyncConfig();
+  }
+}
+
+function storeGitHubSyncConfig(config: GitHubSyncConfig): void {
+  window.localStorage.setItem(GITHUB_SYNC_CONFIG_KEY, JSON.stringify(config));
+}
+
+function fileNameFromProjectPath(path: string): string {
+  return path.split('/').filter(Boolean).pop() ?? `project-${Date.now()}.codetrail.json`;
+}
+
+function githubProjectPath(config: GitHubSyncConfig, projectPath: string): string {
+  return `${config.folder.replace(/\/+$/, '')}/${fileNameFromProjectPath(projectPath)}`;
+}
+
+function encodeBase64Utf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+async function githubContentSha(config: GitHubSyncConfig, path: string): Promise<string | undefined> {
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(config.branch)}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${config.token}`,
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+  if (response.status === 404) {
+    return undefined;
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub read failed for ${path} (${response.status}).`);
+  }
+  const payload = await response.json() as { sha?: string };
+  return payload.sha;
+}
+
+async function uploadGitHubContent(
+  config: GitHubSyncConfig,
+  path: string,
+  content: string,
+  message: string
+): Promise<void> {
+  if (!config.token.trim()) {
+    throw new Error('GitHub token is required before uploading.');
+  }
+  const sha = await githubContentSha(config, path);
+  const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${encodeURI(path)}`, {
+    method: 'PUT',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    body: JSON.stringify({
+      branch: config.branch,
+      message,
+      content: encodeBase64Utf8(content),
+      ...(sha ? { sha } : {})
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub upload failed for ${path} (${response.status}).`);
+  }
 }
 
 function inferTitleFromSelectedCode(selectedCode: string): string {
@@ -349,11 +466,19 @@ function CodeTrailEditor() {
   const [projectLibraryTitle, setProjectLibraryTitle] = useState('Project Library');
   const [contextMenu, setContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [editingProjectPath, setEditingProjectPath] = useState<string | null>(null);
+  const [githubConfig, setGithubConfig] = useState<GitHubSyncConfig>(() => loadGitHubSyncConfig());
+  const [githubSyncStatus, setGithubSyncStatus] = useState('GitHub sync not configured.');
+  const [isEditingGitHubToken, setIsEditingGitHubToken] = useState(() => !loadGitHubSyncConfig().token.trim());
+  const [isEditingGitHubSettings, setIsEditingGitHubSettings] = useState(false);
+  const [embedProjectPath] = useState(() => embedProjectPathFromLocation());
+  const isEmbedMode = Boolean(embedProjectPath);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const scopeDragRef = useRef<ScopeDragState | null>(null);
   const hasHydratedProjectLibraryRef = useRef(false);
   const lastAutoSavedDocumentRef = useRef<CodeTrailDocument | null>(null);
+  const hasLoadedEmbedProjectRef = useRef(false);
+  const lastEmbedUploadedDocumentRef = useRef<CodeTrailDocument | null>(null);
 
   const setDocument = useCallback((next: CodeTrailDocument) => {
     setDocumentState({ ...next, metadata: { ...next.metadata, updatedAt: new Date().toISOString() } });
@@ -431,6 +556,16 @@ function CodeTrailEditor() {
     [document, setDocument]
   );
 
+  const updateScope = useCallback(
+    (updatedScope: CodeTrailDocument['scopes'][number]) => {
+      setDocument({
+        ...document,
+        scopes: document.scopes.map((scope) => (scope.id === updatedScope.id ? updatedScope : scope))
+      });
+    },
+    [document, setDocument]
+  );
+
   const refreshHostedProjects = useCallback(async () => {
     try {
       const response = await fetch(manifestUrl(), { cache: 'no-store' });
@@ -466,6 +601,22 @@ function CodeTrailEditor() {
       window.removeEventListener('keydown', closeContextMenu);
     };
   }, []);
+
+  useEffect(() => {
+    if (!embedProjectPath || hasLoadedEmbedProjectRef.current || hostedProjects.length === 0) {
+      return;
+    }
+    const targetProject = hostedProjects.find(
+      (entry) => entry.path === embedProjectPath || fileNameFromProjectPath(entry.path) === embedProjectPath
+    );
+    if (!targetProject) {
+      setStatus(`Project not found for ${embedProjectPath}.`);
+      return;
+    }
+
+    hasLoadedEmbedProjectRef.current = true;
+    void loadHostedProject(targetProject);
+  }, [embedProjectPath, hostedProjects]);
 
   const createNodeFromSelection = useCallback(
     (sourceNode: CodeTrailDocument['nodes'][number], selection: SelectedCodeAnchor) => {
@@ -670,10 +821,11 @@ function CodeTrailEditor() {
         deleteEdge,
         setSelectedId,
         focusCodeNode,
+        updateScope,
         selectedId,
         focusedId
       ),
-    [connectSelectionToNode, createNodeFromSelection, createSelectionAnchor, deleteEdge, document, focusCodeNode, focusedId, onResizeNode, onToggleNode, removeCallAnchor, selectedId, updateCodeNode]
+    [connectSelectionToNode, createNodeFromSelection, createSelectionAnchor, deleteEdge, document, focusCodeNode, focusedId, onResizeNode, onToggleNode, removeCallAnchor, selectedId, updateCodeNode, updateScope]
   );
   const mappedFlowEdges = useMemo(
     () => toFlowEdges(document, deleteEdge, updateEdgeLabel),
@@ -926,6 +1078,57 @@ function CodeTrailEditor() {
     storeLocalProjectLibrary(projects);
   };
 
+  const updateGitHubConfig = (patch: Partial<GitHubSyncConfig>) => {
+    const nextConfig = { ...githubConfig, ...patch };
+    setGithubConfig(nextConfig);
+    storeGitHubSyncConfig(nextConfig);
+    setGithubSyncStatus(nextConfig.token.trim() ? 'GitHub sync configured.' : 'GitHub sync not configured.');
+    if (patch.token !== undefined && patch.token.trim()) {
+      setIsEditingGitHubToken(false);
+    }
+  };
+
+  const uploadProjectToGitHub = async (
+    entry: HostedProjectEntry,
+    projectDocument: CodeTrailDocument,
+    projects: HostedProjectEntry[] = hostedProjects
+  ) => {
+    const jsonPath = githubProjectPath(githubConfig, entry.path);
+    const manifestPath = `${githubConfig.folder.replace(/\/+$/, '')}/manifest.json`;
+    const manifest: HostedProjectManifest = {
+      files: projects.map((project) => ({
+        title: project.path === entry.path ? entry.title : project.title,
+        path: fileNameFromProjectPath(project.path),
+        description: project.path === entry.path ? entry.description : project.description
+      }))
+    };
+
+    await uploadGitHubContent(
+      githubConfig,
+      jsonPath,
+      serializeDocument(projectDocument),
+      `Update CodeTrail project ${entry.title}`
+    );
+    await uploadGitHubContent(
+      githubConfig,
+      manifestPath,
+      JSON.stringify(manifest, null, 2),
+      'Update CodeTrail project manifest'
+    );
+    setGithubSyncStatus(`Uploaded ${entry.title} to GitHub.`);
+  };
+
+  const saveActiveProjectToGitHub = async () => {
+    if (!activeHostedProjectPath) {
+      throw new Error('No active project selected.');
+    }
+    const activeEntry = hostedProjects.find((entry) => entry.path === activeHostedProjectPath);
+    if (!activeEntry) {
+      throw new Error('Active project is missing from the project library.');
+    }
+    await uploadProjectToGitHub(activeEntry, document);
+  };
+
   useEffect(() => {
     if (!activeHostedProjectPath) {
       return;
@@ -960,6 +1163,49 @@ function CodeTrailEditor() {
     return () => window.clearTimeout(timeoutId);
   }, [activeHostedProjectPath, document, hostedProjects]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (!activeHostedProjectPath || !githubConfig.token.trim()) {
+        return;
+      }
+      const activeEntry = hostedProjects.find((entry) => entry.path === activeHostedProjectPath);
+      if (!activeEntry) {
+        return;
+      }
+      void uploadProjectToGitHub(activeEntry, document).catch((error) => {
+        setGithubSyncStatus(error instanceof Error ? error.message : String(error));
+      });
+    }, GITHUB_UPLOAD_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeHostedProjectPath, document, githubConfig, hostedProjects]);
+
+  useEffect(() => {
+    if (!isEmbedMode || !activeHostedProjectPath || !githubConfig.token.trim()) {
+      return;
+    }
+    if (lastEmbedUploadedDocumentRef.current === document) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const activeEntry = hostedProjects.find((entry) => entry.path === activeHostedProjectPath);
+      if (!activeEntry) {
+        return;
+      }
+      void uploadProjectToGitHub(activeEntry, document)
+        .then(() => {
+          lastEmbedUploadedDocumentRef.current = document;
+          setStatus(`Auto-saved ${activeEntry.title} to GitHub.`);
+        })
+        .catch((error) => {
+          setGithubSyncStatus(error instanceof Error ? error.message : String(error));
+        });
+    }, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeHostedProjectPath, document, githubConfig, hostedProjects, isEmbedMode]);
+
   const updateProjectEntry = (path: string, patch: Partial<HostedProjectEntry>) => {
     persistProjectList(
       hostedProjects.map((entry) =>
@@ -988,7 +1234,7 @@ function CodeTrailEditor() {
     return path;
   };
 
-  const newProject = () => {
+  const newProject = async () => {
     const currentPath = activeHostedProjectPath ?? pathForNewLocalProject();
     const currentEntry = hostedProjects.find((item) => item.path === currentPath);
     const savedCurrentEntry: HostedProjectEntry = {
@@ -1009,7 +1255,15 @@ function CodeTrailEditor() {
       source: 'local'
     };
     const remainingProjects = hostedProjects.filter((entry) => entry.path !== currentPath && entry.path !== path);
-    persistProjectList([nextEntry, savedCurrentEntry, ...remainingProjects]);
+    const nextProjects = [nextEntry, savedCurrentEntry, ...remainingProjects];
+    persistProjectList(nextProjects);
+    if (githubConfig.token.trim()) {
+      try {
+        await uploadProjectToGitHub(savedCurrentEntry, document, nextProjects);
+      } catch (error) {
+        setGithubSyncStatus(error instanceof Error ? error.message : String(error));
+      }
+    }
     setDocument(nextDocument);
     setProjectPath(path);
     setActiveHostedProjectPath(path);
@@ -1127,13 +1381,38 @@ function CodeTrailEditor() {
     }
   };
 
+  const copyProjectEmbedLink = async (entry: HostedProjectEntry) => {
+    try {
+      await navigator.clipboard.writeText(embedUrlForProject(entry.path));
+      setStatus(`Copied Notion link for ${entry.title}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const saveEmbedProject = async () => {
+    const savedPath = saveCurrentToProjectList(activeHostedProjectPath);
+    setActiveHostedProjectPath(savedPath);
+    if (githubConfig.token.trim()) {
+      try {
+        await saveActiveProjectToGitHub();
+        setStatus('Saved to GitHub.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    setStatus('Saved locally. Add a GitHub token in the full editor to upload.');
+  };
+
   const contextProject = contextMenu
     ? hostedProjects.find((entry) => entry.path === contextMenu.path) ?? null
     : null;
 
   return (
-    <main className="app-shell">
-      <section className="workspace">
+    <main className={isEmbedMode ? 'app-shell is-embed-mode' : 'app-shell'}>
+      <section className={isEmbedMode ? 'workspace workspace--embed' : 'workspace'}>
+        {!isEmbedMode ? (
         <aside className="project-sidebar" aria-label="Hosted project library">
           <div className="project-sidebar__header">
             <div className="project-sidebar__title">
@@ -1145,7 +1424,7 @@ function CodeTrailEditor() {
               <span>{hostedProjectStatus}</span>
             </div>
             <div className="project-sidebar__actions">
-              <button className="icon-button" onClick={newProject} title="New project" aria-label="New project">
+              <button className="icon-button" onClick={() => void newProject()} title="New project" aria-label="New project">
                 <FilePlus2 size={15} />
               </button>
               <button className="icon-button" onClick={openProject} title="Open project" aria-label="Open project">
@@ -1156,6 +1435,65 @@ function CodeTrailEditor() {
               </button>
             </div>
           </div>
+          <section className="github-sync" aria-label="GitHub sync settings">
+            <div className="github-sync__summary">
+              <strong>GitHub Sync</strong>
+              <button type="button" onClick={() => setIsEditingGitHubSettings((value) => !value)}>
+                Settings
+              </button>
+            </div>
+            {isEditingGitHubSettings ? (
+              <div className="github-sync__grid">
+                <label>
+                  Owner
+                  <input
+                    value={githubConfig.owner}
+                    onChange={(event) => updateGitHubConfig({ owner: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Repo
+                  <input
+                    value={githubConfig.repo}
+                    onChange={(event) => updateGitHubConfig({ repo: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Branch
+                  <input
+                    value={githubConfig.branch}
+                    onChange={(event) => updateGitHubConfig({ branch: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Folder
+                  <input
+                    value={githubConfig.folder}
+                    onChange={(event) => updateGitHubConfig({ folder: event.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <div className="github-sync__token">
+              <span>GitHub token</span>
+              {githubConfig.token.trim() && !isEditingGitHubToken ? (
+                <div className="github-sync__token-row">
+                  <strong>Token saved</strong>
+                  <button type="button" onClick={() => setIsEditingGitHubToken(true)}>Change</button>
+                  <button type="button" onClick={() => updateGitHubConfig({ token: '' })}>Clear</button>
+                </div>
+              ) : (
+                <input
+                  aria-label="GitHub token"
+                  type="password"
+                  placeholder="Fine-grained token with Contents read/write"
+                  value={githubConfig.token}
+                  onChange={(event) => updateGitHubConfig({ token: event.target.value })}
+                />
+              )}
+            </div>
+            <span>{githubSyncStatus}</span>
+          </section>
           <div className="project-list">
             {hostedProjects.map((entry) => (
               <article
@@ -1221,12 +1559,16 @@ function CodeTrailEditor() {
               <button onClick={() => { void exportProjectEntryHtml(contextProject); setContextMenu(null); }}>
                 <FileDown size={14} /> Export HTML
               </button>
+              <button onClick={() => { void copyProjectEmbedLink(contextProject); setContextMenu(null); }}>
+                <Link size={14} /> Copy Notion Link
+              </button>
             </div>
           ) : null}
         </aside>
+        ) : null}
         <div
           ref={canvasRef}
-          className="canvas"
+          className={isEmbedMode ? 'canvas canvas--embed' : 'canvas'}
           onDoubleClickCapture={(event) => {
             if (!focusedId || isEventInsideFocusedNode(event.target)) {
               return;
@@ -1299,9 +1641,18 @@ function CodeTrailEditor() {
             proOptions={{ hideAttribution: true }}
           >
             <Background />
-            <Controls />
+            <Controls showInteractive={false} />
             <MiniMap pannable zoomable />
           </ReactFlow>
+          {isEmbedMode ? (
+            <div className="embed-savebar">
+              <strong>{hostedProjects.find((entry) => entry.path === activeHostedProjectPath)?.title ?? document.metadata.title}</strong>
+              <span>{githubConfig.token.trim() ? 'Auto-saves to GitHub after edits.' : 'Saved locally until GitHub token is configured.'}</span>
+              <button onClick={() => void saveEmbedProject()}>
+                <Save size={14} /> Save
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
       <footer className="statusbar">{status}</footer>

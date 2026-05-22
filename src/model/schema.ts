@@ -45,6 +45,7 @@ const edgeSchema = z.object({
 const scopeSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
+  description: z.string().optional(),
   color: z.string().min(1),
   bounds: pointSchema.merge(sizeSchema)
 });

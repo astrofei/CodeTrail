@@ -78,6 +78,7 @@ export function createScope(partial: Partial<Scope> = {}): Scope {
   return {
     id: partial.id ?? newId('scope'),
     title: partial.title ?? 'Scope',
+    description: partial.description,
     color: partial.color ?? DEFAULT_SCOPE_COLOR,
     bounds: partial.bounds ?? { x: 80, y: 80, width: 520, height: 360 }
   };

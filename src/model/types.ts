@@ -45,6 +45,7 @@ export type CodeTrailEdge = {
 export type Scope = {
   id: string;
   title: string;
+  description?: string;
   color: string;
   bounds: Rect;
 };

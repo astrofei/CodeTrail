@@ -9,7 +9,6 @@ const MIN_NODE_WIDTH = 260;
 const MIN_NODE_HEIGHT = 120;
 const MAX_AUTO_WIDTH = 960;
 const AUTO_WIDTH_TOLERANCE = 72;
-const AUTO_HEIGHT_TOLERANCE = 8;
 const HEADER_HEIGHT = 55;
 const SUMMARY_MIN_HEIGHT = 58;
 const CODE_VERTICAL_CHROME = 62;
@@ -282,14 +281,8 @@ export const CodeNodeView = memo(function CodeNodeView({ data, selected }: NodeP
     const estimatedSize = sizeForContent(codeNode.size.width, codeNode.summary, codeNode.codeSnapshot);
     const preferredHeight = Math.max(estimatedSize.height, measuredHeight);
     const nextSize = {
-      width:
-        codeNode.size.width > estimatedSize.width + AUTO_WIDTH_TOLERANCE
-          ? estimatedSize.width
-          : Math.min(MAX_AUTO_WIDTH, Math.max(codeNode.size.width, estimatedSize.width)),
-      height:
-        codeNode.size.height > preferredHeight + AUTO_HEIGHT_TOLERANCE
-          ? preferredHeight
-          : Math.max(codeNode.size.height, preferredHeight)
+      width: Math.min(MAX_AUTO_WIDTH, Math.max(codeNode.size.width, estimatedSize.width)),
+      height: Math.max(codeNode.size.height, preferredHeight)
     };
 
     if (
@@ -364,6 +357,16 @@ export const CodeNodeView = memo(function CodeNodeView({ data, selected }: NodeP
         }}
       />
       <Handle id="target" type="target" position={Position.Left} className="target-handle" />
+      {isSelected ? (
+        <label className="code-node__color-button nodrag" title="Node color" aria-label={`${codeNode.title} color`}>
+          <input
+            type="color"
+            value={codeNode.color}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => onUpdate({ ...codeNode, color: event.target.value })}
+          />
+        </label>
+      ) : null}
       <header className="code-node__header">
         <button
           className="code-node__toggle nodrag"
@@ -427,7 +430,7 @@ export const CodeNodeView = memo(function CodeNodeView({ data, selected }: NodeP
         </div>
       )}
       {!codeNode.collapsed && (
-        <div className="code-node__code-panel">
+        <div className="code-node__code-panel nowheel nopan">
           <select
             className="code-node__language nodrag"
             title="Language"

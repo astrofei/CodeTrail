@@ -70,6 +70,10 @@ select {
   grid-template-columns: 280px 1fr;
 }
 
+.workspace--embed {
+  grid-template-columns: 1fr;
+}
+
 .project-sidebar {
   min-width: 0;
   overflow: hidden;
@@ -125,6 +129,122 @@ select {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.github-sync {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid #e5e9f0;
+  background: #f8fafc;
+}
+
+.github-sync__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.github-sync__summary strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-sync__summary button {
+  min-height: 24px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  cursor: pointer;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.github-sync__summary button:hover {
+  border-color: #8eb9e8;
+  background: #eef6ff;
+}
+
+.github-sync__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.github-sync label {
+  display: grid;
+  gap: 3px;
+  color: #647083;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.github-sync input {
+  min-width: 0;
+  min-height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.github-sync span {
+  overflow: hidden;
+  color: #647083;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-sync__token {
+  display: grid;
+  gap: 4px;
+}
+
+.github-sync__token > span {
+  color: #647083;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.github-sync__token-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.github-sync__token-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #166534;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-sync__token-row button {
+  min-height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  cursor: pointer;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
+.github-sync__token-row button:hover {
+  border-color: #8eb9e8;
+  background: #eef6ff;
 }
 
 .project-list {
@@ -261,6 +381,56 @@ select {
 .canvas {
   min-width: 0;
   min-height: 0;
+  position: relative;
+}
+
+.canvas--embed {
+  height: 100%;
+}
+
+.embed-savebar {
+  position: absolute;
+  z-index: 900;
+  left: 14px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+}
+
+.embed-savebar strong {
+  display: none;
+}
+
+.embed-savebar span {
+  display: none;
+}
+
+.embed-savebar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2563eb;
+  border-radius: 7px;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.embed-savebar button:hover {
+  background: #1d4ed8;
 }
 
 .react-flow {
@@ -297,6 +467,33 @@ select {
 
 .code-node.is-focused {
   box-shadow: 0 22px 48px rgba(37, 99, 235, 0.22);
+}
+
+.code-node__color-button {
+  position: absolute;
+  z-index: 80;
+  right: -12px;
+  top: -12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--node-color);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.code-node__color-button input,
+.scope-node__color-button input {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .code-node__header {
@@ -460,10 +657,10 @@ select {
   width: 100%;
   min-height: 100%;
   margin: 0;
-  padding: 46px 0 14px;
+  padding: 46px 12px 14px 10px;
   overflow: visible;
   background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 0 42px, transparent 42px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 0 52px, transparent 52px),
     #0b1220;
   color: #dbeafe;
   font: 13px/1.55 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -473,25 +670,26 @@ select {
 
 .code-node__code-panel {
   position: relative;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   min-height: 58px;
-  overflow: visible;
+  overflow: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
   background: #0b1220;
 }
 
 .code-node.is-focused .code-node__code-panel {
-  overflow: auto;
-  overscroll-behavior: contain;
+  outline: 1px solid rgba(147, 197, 253, 0.5);
 }
 
 .code-node__language {
   position: absolute;
   z-index: 24;
-  right: 10px;
+  right: 8px;
   top: 8px;
-  width: min(134px, 46%);
-  min-height: 30px;
+  width: min(74px, 38%);
+  min-height: 22px;
   border: 1px solid color-mix(in srgb, var(--node-color), #60a5fa 58%);
   border-radius: 7px;
   background:
@@ -499,8 +697,8 @@ select {
     #111827;
   color: #ffffff;
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
-  padding: 0 28px 0 10px;
-  font-size: 12px;
+  padding: 0 18px 0 7px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -512,15 +710,16 @@ select {
 
 .code-node__textarea {
   border: 0;
-  overflow: hidden;
+  overflow: auto;
   resize: none;
   outline: 2px solid #93c5fd;
-  padding-top: 46px;
+  padding: 46px 14px 14px 18px;
+  background: #0b1220;
 }
 
 .code-line {
   display: grid;
-  grid-template-columns: 42px 1fr auto;
+  grid-template-columns: 52px 1fr auto;
   align-items: center;
   min-height: 19px;
   padding-right: 8px;
@@ -528,6 +727,10 @@ select {
   width: max-content;
   min-width: 100%;
   white-space: pre;
+}
+
+.code-node:not(:has(.code-node__code)) .code-node__summary-editor {
+  min-height: 38px;
 }
 
 .code-line.has-anchor {
@@ -813,11 +1016,13 @@ select {
   outline-offset: 2px;
 }
 
-.scope-node__title {
+.scope-node__label {
   position: absolute;
   left: 12px;
   top: 8px;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   max-width: calc(100% - 24px);
   overflow: hidden;
   padding: 3px 9px;
@@ -828,7 +1033,77 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  pointer-events: none;
+  pointer-events: all;
+}
+
+.scope-node__label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-node__note-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--scope-color), #1f2937 18%);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  padding: 0;
+}
+
+.scope-node__color-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--scope-color), #1f2937 18%);
+  border-radius: 999px;
+  background: var(--scope-color);
+  color: #334155;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+.scope-node__color-button:hover {
+  border-color: #60a5fa;
+}
+
+.scope-node__note-button:hover {
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+.scope-node__description {
+  position: absolute;
+  left: 12px;
+  top: 43px;
+  width: min(320px, calc(100% - 24px));
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--scope-color), #64748b 30%);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  resize: vertical;
+  outline: none;
+  pointer-events: all;
+}
+
+.scope-node__description:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.22);
 }
 
 .inspector {

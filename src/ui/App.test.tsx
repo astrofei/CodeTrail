@@ -15,6 +15,7 @@ describe('CodeTrail editor', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.unstubAllGlobals();
+    window.history.pushState({}, '', '/');
   });
 
   it('renders the canvas shell and can add a node', async () => {
@@ -235,5 +236,230 @@ describe('CodeTrail editor', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('uploads the previous project to GitHub before creating a new one', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/') && init?.method === 'PUT') {
+        return Promise.resolve(new Response(JSON.stringify({ content: { sha: 'next-sha' } }), { status: 200 }));
+      }
+      if (url.startsWith('https://api.github.com/')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      fireEvent.click(screen.getByLabelText('New project'));
+
+      await waitFor(() => {
+        const putUrls = fetchMock.mock.calls
+          .filter(([, init]) => init?.method === 'PUT')
+          .map(([input]) => String(input));
+        expect(putUrls.some((url) => url.includes('/contents/public/projects/project-'))).toBe(true);
+        expect(putUrls.some((url) => url.includes('/contents/public/projects/manifest.json'))).toBe(true);
+      });
+      expect(screen.getByText('Current project saved to the sidebar. New project created.')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps a saved GitHub token hidden until the user changes it', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'saved-token'
+      })
+    );
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }))));
+
+    try {
+      render(<App />);
+
+      expect(screen.getByText('Token saved')).toBeInTheDocument();
+      expect(screen.queryByLabelText('GitHub token')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+      expect(screen.getByLabelText('GitHub token')).toHaveValue('saved-token');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('hides advanced GitHub repository settings by default', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }))));
+
+    try {
+      render(<App />);
+
+      expect(screen.getByText('GitHub Sync')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('astrofei')).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue('CodeTrail')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+      expect(screen.getByDisplayValue('astrofei')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('CodeTrail')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('renders a single project without the sidebar for Notion embed links', async () => {
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'Hosted study',
+        description: '',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [
+        {
+          id: 'node_hosted',
+          title: 'Hosted.entry',
+          language: 'typescript',
+          summary: 'Loaded from the hosted project folder.',
+          codeSnapshot: 'function hosted() {\n  return true;\n}',
+          position: { x: 120, y: 120 },
+          size: { width: 360, height: 280 },
+          collapsed: false,
+          color: '#e0f2fe',
+          scopeId: null,
+          callAnchors: []
+        }
+      ],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    window.history.pushState({}, '', '/?embed=1&project=hosted-study.codetrail.json');
+
+    try {
+      render(<App />);
+
+      await waitFor(() => expect(screen.getByText('Hosted.entry')).toBeInTheDocument());
+      expect(screen.queryByLabelText('Hosted project library')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('copies a separate Notion link for a project item', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      const projectTitle = await screen.findByText('Hosted study');
+      fireEvent.contextMenu(projectTitle.closest('.project-list__item')!, {
+        clientX: 120,
+        clientY: 180
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Copy Notion Link' }));
+
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('embed=1'));
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('project=hosted-study.codetrail.json'));
+      await waitFor(() => expect(screen.getByText('Copied Notion link for Hosted study.')).toBeInTheDocument());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('can add a description to a scope from the scope title chip', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText('Add note for Reading scope'));
+    const description = screen.getByLabelText('Reading scope description');
+    fireEvent.change(description, { target: { value: 'Scope responsibility note.' } });
+    fireEvent.blur(description);
+
+    expect(await screen.findByDisplayValue('Scope responsibility note.')).toBeInTheDocument();
+  });
+
+  it('shows color controls for selected nodes and scopes', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByText('A.entry').closest('.code-node')!);
+    expect(screen.getByLabelText('A.entry color')).toBeInTheDocument();
+
+    const scopeNode = screen.getAllByText('Reading scope')
+      .map((element) => element.closest('.scope-node'))
+      .find((element): element is HTMLElement => element instanceof HTMLElement);
+    expect(scopeNode).toBeInTheDocument();
+    fireEvent.click(scopeNode!);
+    await waitFor(() => expect(screen.getByLabelText('Reading scope color')).toBeInTheDocument());
   });
 });

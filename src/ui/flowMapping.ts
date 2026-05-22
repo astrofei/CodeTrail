@@ -6,10 +6,10 @@ export type SelectedCodeAnchor = Pick<CallAnchor, 'label' | 'line' | 'startColum
 
 const COLLAPSED_MIN_WIDTH = 280;
 const COLLAPSED_MAX_WIDTH = 520;
-const COLLAPSED_HEADER_HEIGHT = 72;
-const COLLAPSED_SUMMARY_VERTICAL_PADDING = 28;
-const COLLAPSED_SUMMARY_LINE_HEIGHT = 22;
-const COLLAPSED_BOTTOM_PADDING = 14;
+const COLLAPSED_HEADER_HEIGHT = 60;
+const COLLAPSED_SUMMARY_VERTICAL_PADDING = 18;
+const COLLAPSED_SUMMARY_LINE_HEIGHT = 19;
+const COLLAPSED_BOTTOM_PADDING = 6;
 const COLLAPSED_HORIZONTAL_PADDING = 32;
 
 function clamp(value: number, min: number, max: number): number {
@@ -71,7 +71,10 @@ export type CodeNodeData = {
 
 export type ScopeNodeData = {
   scope: Scope;
+  selected: boolean;
+  onSelect: (id: string) => void;
   onResize: ResizeHandler;
+  onUpdate: (scope: Scope) => void;
 };
 
 export function toFlowNodes(
@@ -86,6 +89,7 @@ export function toFlowNodes(
   onDeleteEdge: (edgeId: string) => void,
   onSelect: (id: string) => void,
   onFocus: (id: string) => void,
+  onUpdateScope: (scope: Scope) => void,
   selectedId: string | null,
   focusedId: string | null
 ): Node[] {
@@ -93,7 +97,7 @@ export function toFlowNodes(
     id: scope.id,
     type: 'scope',
     position: { x: scope.bounds.x, y: scope.bounds.y },
-    data: { scope, onResize },
+    data: { scope, selected: selectedId === scope.id, onSelect, onResize, onUpdate: onUpdateScope },
     draggable: true,
     selectable: true,
     style: {
