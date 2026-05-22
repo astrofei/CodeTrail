@@ -1592,15 +1592,14 @@ function CodeTrailEditor() {
 
   const deleteProjectEntry = async (entry: HostedProjectEntry) => {
     const nextProjects = hostedProjects.filter((project) => project.path !== entry.path);
-    persistProjectList(nextProjects);
-    if (activeHostedProjectPath === entry.path) {
-      setActiveHostedProjectPath(null);
-      setProjectPath(null);
-    }
     setContextMenu(null);
-    setStatus(`Deleted ${entry.title} from the project list.`);
 
     if (!githubConfig.token.trim()) {
+      persistProjectList(nextProjects);
+      if (activeHostedProjectPath === entry.path) {
+        setActiveHostedProjectPath(null);
+        setProjectPath(null);
+      }
       setGithubSyncStatus('GitHub sync not configured. Deleted from the local project list only.');
       setStatus(`Deleted ${entry.title} locally only. Add a GitHub token to move remote files to trash.`);
       return;
@@ -1626,10 +1625,18 @@ function CodeTrailEditor() {
         hostedProjectManifestContent(nextProjects),
         'Update CodeTrail project manifest'
       );
+      persistProjectList(nextProjects);
+      if (activeHostedProjectPath === entry.path) {
+        setActiveHostedProjectPath(null);
+        setProjectPath(null);
+      }
       setGithubSyncStatus(`Moved ${entry.title} to ${trashPath}.`);
       setStatus(`Moved ${entry.title} to GitHub trash: ${trashPath}.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = rawMessage.includes('Resource not accessible by personal access token')
+        ? `${rawMessage}. Give the GitHub token Contents read/write access to ${githubConfig.owner}/${githubConfig.repo}.`
+        : rawMessage;
       setGithubSyncStatus(message);
       setStatus(`GitHub delete failed: ${message}`);
     }

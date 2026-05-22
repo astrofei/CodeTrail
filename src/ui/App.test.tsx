@@ -331,6 +331,80 @@ describe('CodeTrail editor', () => {
     }
   });
 
+  it('keeps a GitHub-backed project listed when moving it to trash fails', async () => {
+    window.localStorage.setItem(
+      'codetrail.githubSyncConfig',
+      JSON.stringify({
+        owner: 'astrofei',
+        repo: 'CodeTrail',
+        branch: 'main',
+        folder: 'public/projects',
+        token: 'test-token'
+      })
+    );
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'Hosted study',
+        description: 'A hosted fixture.',
+        createdAt: '2026-05-22T00:00:00.000Z',
+        updatedAt: '2026-05-22T00:00:00.000Z'
+      },
+      nodes: [],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      if (url.includes('/contents/public/projects/trash/') && init?.method === 'PUT') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: 'Resource not accessible by personal access token' }), { status: 403 })
+        );
+      }
+      if (url.includes('/contents/public/projects/trash/')) {
+        return Promise.resolve(new Response('', { status: 404 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<App />);
+
+      await screen.findByText('Hosted study');
+      fireEvent.click(screen.getByLabelText('Delete Hosted study'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Hosted study')).toBeInTheDocument();
+        expect(screen.getAllByText(/Give the GitHub token Contents read\/write access to astrofei\/CodeTrail/).length).toBeGreaterThan(0);
+      });
+      const deleteCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE');
+      expect(deleteCalls).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('edits sidebar project metadata only after double click', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
