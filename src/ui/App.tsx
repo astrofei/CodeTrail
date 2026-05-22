@@ -1390,21 +1390,6 @@ function CodeTrailEditor() {
     }
   };
 
-  const saveEmbedProject = async () => {
-    const savedPath = saveCurrentToProjectList(activeHostedProjectPath);
-    setActiveHostedProjectPath(savedPath);
-    if (githubConfig.token.trim()) {
-      try {
-        await saveActiveProjectToGitHub();
-        setStatus('Saved to GitHub.');
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-    setStatus('Saved locally. Add a GitHub token in the full editor to upload.');
-  };
-
   const contextProject = contextMenu
     ? hostedProjects.find((entry) => entry.path === contextMenu.path) ?? null
     : null;
@@ -1647,10 +1632,7 @@ function CodeTrailEditor() {
           {isEmbedMode ? (
             <div className="embed-savebar">
               <strong>{hostedProjects.find((entry) => entry.path === activeHostedProjectPath)?.title ?? document.metadata.title}</strong>
-              <span>{githubConfig.token.trim() ? 'Auto-saves to GitHub after edits.' : 'Saved locally until GitHub token is configured.'}</span>
-              <button onClick={() => void saveEmbedProject()}>
-                <Save size={14} /> Save
-              </button>
+              <span>{githubConfig.token.trim() ? 'Auto-saves locally and to GitHub after edits.' : 'Auto-saves locally after edits.'}</span>
             </div>
           ) : null}
         </div>

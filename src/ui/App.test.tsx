@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { App } from './App';
 
@@ -386,8 +386,86 @@ describe('CodeTrail editor', () => {
 
       await waitFor(() => expect(screen.getByText('Hosted.entry')).toBeInTheDocument());
       expect(screen.queryByLabelText('Hosted project library')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+      expect(screen.getByText('Auto-saves locally after edits.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('auto-saves embed edits into the local project library', async () => {
+    const hostedDocument = {
+      version: 1,
+      metadata: {
+        title: 'Hosted study',
+        description: 'A hosted fixture.',
+        createdAt: '2026-05-20T00:00:00.000Z',
+        updatedAt: '2026-05-20T00:00:00.000Z'
+      },
+      nodes: [
+        {
+          id: 'hosted_node',
+          title: 'Hosted.entry',
+          language: 'ts',
+          summary: 'Loaded from the hosted project folder.',
+          codeSnapshot: 'export function hosted() {}',
+          position: { x: 100, y: 100 },
+          size: { width: 320, height: 240 },
+          collapsed: false,
+          color: '#fff7ed',
+          scopeId: null,
+          callAnchors: []
+        }
+      ],
+      edges: [],
+      scopes: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/projects/manifest.json')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  title: 'Hosted study',
+                  path: 'hosted-study.codetrail.json',
+                  description: 'A hosted fixture.'
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith('/projects/hosted-study.codetrail.json')) {
+        return Promise.resolve(new Response(JSON.stringify(hostedDocument), { status: 200 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    window.history.pushState({}, '', '/?embed=1&project=hosted-study.codetrail.json');
+
+    try {
+      render(<App />);
+
+      const title = await screen.findByText('Hosted.entry');
+      fireEvent.click(title.closest('.code-node')!);
+      vi.useFakeTimers();
+      fireEvent.click(screen.getByTitle('Collapse node'));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      vi.useRealTimers();
+
+      const projects = JSON.parse(window.localStorage.getItem('codetrail.projectLibrary') ?? '[]');
+      expect(projects[0].path).toBe('hosted-study.codetrail.json');
+      expect(projects[0].document.nodes[0].collapsed).toBe(true);
+      expect(screen.getByText('Auto-saved Hosted study.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });
