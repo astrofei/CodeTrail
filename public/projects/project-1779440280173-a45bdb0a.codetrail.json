@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "metadata": {
+    "title": "CodeTrail Study Map",
+    "description": "",
+    "createdAt": "2026-05-22T08:57:54.786Z",
+    "updatedAt": "2026-05-22T08:58:00.173Z"
+  },
+  "nodes": [
+    {
+      "id": "node_b310c9fa",
+      "title": "A.entry",
+      "language": "typescript",
+      "summary": "Entry point being reviewed.",
+      "codeSnapshot": "function entry() {\n  B.work();\n}",
+      "position": {
+        "x": 140,
+        "y": 160
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_cd18406a",
+      "callAnchors": [
+        {
+          "id": "anchor_example",
+          "label": "B.work()",
+          "line": 2,
+          "startColumn": 2,
+          "endColumn": 10
+        }
+      ]
+    },
+    {
+      "id": "node_ad7792bb",
+      "title": "B.work",
+      "language": "typescript",
+      "summary": "Called method.",
+      "codeSnapshot": "function work() {\n  return true;\n}",
+      "position": {
+        "x": 560,
+        "y": 190
+      },
+      "size": {
+        "width": 360,
+        "height": 280
+      },
+      "collapsed": false,
+      "color": "#e0f2fe",
+      "scopeId": "scope_cd18406a",
+      "callAnchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_5efb1035",
+      "sourceNodeId": "node_b310c9fa",
+      "sourceAnchorId": "anchor_example",
+      "targetNodeId": "node_ad7792bb",
+      "label": "calls",
+      "color": "#2563eb"
+    }
+  ],
+  "scopes": [
+    {
+      "id": "scope_cd18406a",
+      "title": "Reading scope",
+      "color": "#dcfce7",
+      "bounds": {
+        "x": 60,
+        "y": 70,
+        "width": 820,
+        "height": 430
+      }
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  }
+}
